@@ -1,0 +1,13 @@
+stm32wbxx_ll_bus.h:539:22:LL_AHB2_GRP1_EnableClock	1
+main.c:73:1:__io_putchar	1
+main.c:95:5:main	1
+main.c:164:6:SystemClock_Config	3
+main.c:210:6:PeriphCommonClock_Config	2
+main.c:234:13:MX_I2C1_Init	4
+main.c:282:13:MX_LPUART1_UART_Init	5
+main.c:330:13:MX_GPIO_Init	1
+main.c:361:6:MCP23008_Init	1
+main.c:371:9:MCP23008_ReadGPIO	1
+main.c:386:6:MCP23008_ConfigureInterrupts	1
+main.c:423:6:HAL_GPIO_EXTI_IRQHandler	6
+main.c:457:6:Error_Handler	1

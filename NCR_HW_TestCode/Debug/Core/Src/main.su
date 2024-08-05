@@ -1,0 +1,13 @@
+../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_ll_bus.h:539:22:LL_AHB2_GRP1_EnableClock	24	static
+../Core/Src/main.c:73:1:__io_putchar	16	static
+../Core/Src/main.c:95:5:main	24	static
+../Core/Src/main.c:164:6:SystemClock_Config	112	static
+../Core/Src/main.c:210:6:PeriphCommonClock_Config	88	static
+../Core/Src/main.c:234:13:MX_I2C1_Init	8	static
+../Core/Src/main.c:282:13:MX_LPUART1_UART_Init	8	static
+../Core/Src/main.c:330:13:MX_GPIO_Init	32	static
+../Core/Src/main.c:361:6:MCP23008_Init	24	static
+../Core/Src/main.c:371:9:MCP23008_ReadGPIO	24	static
+../Core/Src/main.c:386:6:MCP23008_ConfigureInterrupts	24	static
+../Core/Src/main.c:423:6:HAL_GPIO_EXTI_IRQHandler	24	static
+../Core/Src/main.c:457:6:Error_Handler	4	static,ignoring_inline_asm
