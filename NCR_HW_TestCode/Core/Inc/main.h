@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define SMOKE_A_Pin GPIO_PIN_12
 #define SMOKE_A_GPIO_Port GPIOB
 #define SMOKE_A_EXTI_IRQn EXTI15_10_IRQn
+#define MODBUS_EN_Pin GPIO_PIN_4
+#define MODBUS_EN_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

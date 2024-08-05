@@ -10,8 +10,11 @@ RM := rm -rf
 # All of the sources participating in the build are defined here
 -include sources.mk
 -include Drivers/STM32WBxx_HAL_Driver/Src/subdir.mk
+-include Core/sht2x/subdir.mk
 -include Core/Startup/subdir.mk
 -include Core/Src/subdir.mk
+-include Core/PWXModbus/subdir.mk
+-include Core/LIS2DW12/subdir.mk
 -include objects.mk
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -52,6 +55,9 @@ default.size.stdout \
 OBJDUMP_LIST += \
 NCR_HW_TestCode.list \
 
+OBJCOPY_HEX += \
+NCR_HW_TestCode.hex \
+
 OBJCOPY_BIN += \
 NCR_HW_TestCode.bin \
 
@@ -78,6 +84,11 @@ NCR_HW_TestCode.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
+NCR_HW_TestCode.hex: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objcopy  -O ihex $(EXECUTABLES) "NCR_HW_TestCode.hex"
+	@echo 'Finished building: $@'
+	@echo ' '
+
 NCR_HW_TestCode.bin: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	arm-none-eabi-objcopy  -O binary $(EXECUTABLES) "NCR_HW_TestCode.bin"
 	@echo 'Finished building: $@'
@@ -85,10 +96,10 @@ NCR_HW_TestCode.bin: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 
 # Other Targets
 clean:
-	-$(RM) NCR_HW_TestCode.bin NCR_HW_TestCode.elf NCR_HW_TestCode.list NCR_HW_TestCode.map default.size.stdout
+	-$(RM) NCR_HW_TestCode.bin NCR_HW_TestCode.elf NCR_HW_TestCode.hex NCR_HW_TestCode.list NCR_HW_TestCode.map default.size.stdout
 	-@echo ' '
 
-secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_BIN)
+secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_HEX) $(OBJCOPY_BIN)
 
 fail-specified-linker-script-missing:
 	@echo 'Error: Cannot find the specified linker script. Check the linker settings in the build configuration.'
