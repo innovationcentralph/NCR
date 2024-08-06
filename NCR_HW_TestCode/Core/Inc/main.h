@@ -28,7 +28,7 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32wbxx_hal.h"
-
+#include "ProjectConfig.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define SMOKE_A_Pin GPIO_PIN_12
 #define SMOKE_A_GPIO_Port GPIOB
 #define SMOKE_A_EXTI_IRQn EXTI15_10_IRQn
+#define WDT_DONE_Pin GPIO_PIN_14
+#define WDT_DONE_GPIO_Port GPIOB
 #define MODBUS_EN_Pin GPIO_PIN_4
 #define MODBUS_EN_GPIO_Port GPIOB
 

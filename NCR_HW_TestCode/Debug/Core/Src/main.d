@@ -35,6 +35,7 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_hal_uart.h \
  ../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_hal_uart_ex.h \
  ../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_ll_system.h \
+ ../Core/Inc/ProjectConfig.h \
  C:/Users/Owner/STM32CubeIDE/NCR/NCR_HW_TestCode/Core/LIS2DW12/lis2dw12_reg.h \
  C:/Users/Owner/STM32CubeIDE/NCR/NCR_HW_TestCode/Core/sht2x/sht2x_for_stm32_hal.h \
  C:/Users/Owner/STM32CubeIDE/NCR/NCR_HW_TestCode/Core/PWXModbus/PWX_ST50H_Modbus.h
@@ -75,6 +76,7 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_hal_uart.h:
 ../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_hal_uart_ex.h:
 ../Drivers/STM32WBxx_HAL_Driver/Inc/stm32wbxx_ll_system.h:
+../Core/Inc/ProjectConfig.h:
 C:/Users/Owner/STM32CubeIDE/NCR/NCR_HW_TestCode/Core/LIS2DW12/lis2dw12_reg.h:
 C:/Users/Owner/STM32CubeIDE/NCR/NCR_HW_TestCode/Core/sht2x/sht2x_for_stm32_hal.h:
 C:/Users/Owner/STM32CubeIDE/NCR/NCR_HW_TestCode/Core/PWXModbus/PWX_ST50H_Modbus.h:
