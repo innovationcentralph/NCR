@@ -14,7 +14,9 @@
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
 #define VERSION_MID   1
-#define VERSION_MINOR 0
+#define VERSION_MINOR 1
+
+#define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
 
 
 /* MCP23008 Definitions */
@@ -33,6 +35,23 @@
 
 // Structure Definitions
 
+// Define the enum for data types
+typedef enum {
+    TYPE_UINT8,
+    TYPE_UINT16,
+    TYPE_UINT32,
+    TYPE_INT8,
+    TYPE_INT16,
+    TYPE_INT32,
+    TYPE_FLOAT
+} DataType;
+
+typedef enum{
+	IDLE = 0,
+	DRY_CONTACT,
+	SMOKE_SENSOR,
+	SHT
+}UnscheduledTxTriggers;
 // Structure to hold Dry Contact Channel Status
 typedef struct {
 	uint8_t value;
@@ -56,6 +75,25 @@ typedef struct {
     uint8_t level;
 } SmokeStatus;
 
+// Structure to hold LTC4015 parameters
+typedef struct {
+    float VIN;
+    float VBAT;
+    float IIN;
+    float IBAT;
+    float VSYS;
+} LTCStatus;
+
+// Structure to help Power Meter parameters
+typedef struct {
+	uint16_t voltage;
+	uint16_t current;
+	uint16_t power;
+	uint16_t powerFactor;
+	uint16_t frequency;
+	uint32_t energy;
+} ADL100Status;
+
 
 
 
@@ -71,13 +109,27 @@ typedef struct{
 
 }Sensors;
 
+typedef enum {
+    HEARTBEAT = 0,
+    UNSCHEDULED_TRANSMISSION,
+    DIAGNOSTICS,
+    ACKNOWLEDGEMENT,
+    DOWNLINK_QUERY_RESPONSE
+} MessageType;
 
+typedef struct{
+	MessageType msgType;
+	uint8_t buffer[MAX_LORA_PAYLOAD_BUFFER_SIZE];
+	uint8_t length;
+}TxPayload;
 
 
 // System Behavior Macros
 #define SERIAL_DEBUG_SHT
 #define SERIAL_DEBUG_SENSORS
+#define SERIAL_DEBUG_INTERRUPT
 #define SCAN_I2C_DEVICES
+#define SERIAL_DEBUG_PAYLOADCHECK
 
 #define SHT_READ_INTERVAL 1000
 #define DEVICE_HEARTBEAL  5000

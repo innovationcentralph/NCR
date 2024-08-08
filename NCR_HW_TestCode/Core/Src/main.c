@@ -51,7 +51,7 @@ UART_HandleTypeDef hlpuart1;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+UnscheduledTxTriggers TxTriggers = IDLE;
 ModBus_t ModbusResp;
 Sensors sensors;
 
@@ -87,6 +87,9 @@ void MCP23008_Init(void);
 void MCP23008_ConfigureInterrupts(void);
 void scanI2CDevices(void);
 void printLineMarker(char marker); // for debugging
+void handleInterruptTriggers(UnscheduledTxTriggers trigger);
+
+bool generatePayload(void **inputs, DataType *types, uint8_t itemCount, MessageType msgType, TxPayload *payload);
 
 DryContactStatus MCP23008_ReadInputs(void);
 SmokeStatus ReadSmokeStatus(void);
@@ -169,7 +172,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-
+	  // Check for Unscheduled Transmission Requests
+	  handleInterruptTriggers(TxTriggers);
 
   	  // Check Temperature Reading Every X Interval
   	  if(HAL_GetTick() - shtReadMillis > SHT_READ_INTERVAL){
@@ -574,32 +578,19 @@ void HAL_GPIO_EXTI_IRQHandler(uint16_t GPIO_Pin)
   {
     __HAL_GPIO_EXTI_CLEAR_IT(GPIO_Pin);
 
-
-
     switch(GPIO_Pin)
     {
       case GPIO_PIN_15:
-      {
-          DryContactStatus dryContact = MCP23008_ReadInputs();
-		  printf("DRY CONTACT: %d %d %d %d %d %d %d %d \r\n",
-				 dryContact.DC1, dryContact.DC2, dryContact.DC3, dryContact.DC4,
-				 dryContact.DC5, dryContact.DC6, dryContact.DC7, dryContact.DC8);
+    	  TxTriggers = DRY_CONTACT;
           break;
-      }
-
       case SMOKE_A_Pin:
       case SMOKE_B_Pin:
-      {
-    	  SmokeStatus smokeStatus = ReadSmokeStatus();
-		  printf("SMOKE_A: %d, SMOKE_B: %d, Status: %s \r\n",
-				 smokeStatus.pinA, smokeStatus.pinB, smokeStatus.status);
-
+    	  TxTriggers = SMOKE_SENSOR;
           break;
-      }
-
       default:
         break;
     }
+
   }
 }
 
@@ -666,6 +657,140 @@ void printLineMarker(char marker) {
     }
     printf("\r\n");
 }
+
+// Function to convert data to byte array
+uint8_t dataToByteArray(void *input, uint8_t *output, DataType type) {
+    uint8_t size = 0;
+    switch (type) {
+        case TYPE_UINT8:
+            output[0] = *((uint8_t*)input);
+            size = sizeof(uint8_t);
+            break;
+        case TYPE_UINT16:
+            memcpy(output, input, sizeof(uint16_t));
+            size = sizeof(uint16_t);
+            break;
+        case TYPE_UINT32:
+            memcpy(output, input, sizeof(uint32_t));
+            size = sizeof(uint32_t);
+            break;
+        case TYPE_INT8:
+            output[0] = *((int8_t*)input);
+            size = sizeof(int8_t);
+            break;
+        case TYPE_INT16:
+            memcpy(output, input, sizeof(int16_t));
+            size = sizeof(int16_t);
+            break;
+        case TYPE_INT32:
+            memcpy(output, input, sizeof(int32_t));
+            size = sizeof(int32_t);
+            break;
+        case TYPE_FLOAT:
+            memcpy(output, input, sizeof(float));
+            size = sizeof(float);
+            break;
+    }
+    return size;
+}
+
+
+// Function to generate the payload
+bool generatePayload(void **inputs, DataType *types, uint8_t itemCount, MessageType msgType, TxPayload *payload) {
+    if (inputs == NULL || types == NULL || itemCount == 0 || itemCount > MAX_LORA_PAYLOAD_BUFFER_SIZE) {
+        return false;
+    }
+
+    payload->msgType = msgType;
+    payload->buffer[0] = msgType;
+    uint8_t index = 1;
+
+    for (uint8_t i = 0; i < itemCount; ++i) {
+        uint8_t size = dataToByteArray(inputs[i], &payload->buffer[index], types[i]);
+        if (index + size > MAX_LORA_PAYLOAD_BUFFER_SIZE) {
+            return false; // Exceeds maximum buffer size
+        }
+        index += size;
+    }
+
+    payload->length = index;
+    return true;
+}
+
+bool generateUnscheduledTxPayload(Sensors sensors){
+
+	TxPayload payload;
+
+	MessageType msgType = UNSCHEDULED_TRANSMISSION;
+
+	void *inputs[] = { &sensors.sht20.temperature, &sensors.sht20.humidity, &sensors.dryContact.value, &sensors.smoke.level };
+	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8 };
+
+	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, &payload);
+
+#ifdef SERIAL_DEBUG_PAYLOADCHECK
+	if(ret){
+		printf("UNSCHEDULED PAYLOAD: ");
+		for (uint8_t i = 0; i < payload.length; ++i) {
+			printf("%02X ", payload.buffer[i]);
+		}
+		printf("\r\n ");
+	}
+	else{
+		printf("Failed to generate payload\n");
+	}
+#endif
+
+	return ret;
+}
+
+void handleInterruptTriggers(UnscheduledTxTriggers trigger){
+
+	// clear remaining interrupts
+	__HAL_GPIO_EXTI_CLEAR_IT(SMOKE_A_Pin);
+	__HAL_GPIO_EXTI_CLEAR_IT(SMOKE_B_Pin);
+	__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_15);
+
+
+	DryContactStatus dryContact;
+	SmokeStatus smokeStatus;
+	switch(trigger){
+	case IDLE:
+		// do nothing
+		break;
+	case DRY_CONTACT:
+	case SMOKE_SENSOR:
+	case SHT:
+		smokeStatus = ReadSmokeStatus();
+		sensors.sht20.temperature = SHT2x_GetTemperature(1);
+	    sensors.sht20.humidity = SHT2x_GetRelativeHumidity(1);
+
+	    HAL_Delay(100); // Give time for the pin signal to settle down
+	    dryContact = MCP23008_ReadInputs();
+
+
+#ifdef SERIAL_DEBUG_INTERRUPT
+		printLineMarker('!');
+		printf("DRY CONTACT: %d %d %d %d %d %d %d %d \r\n",
+				 dryContact.DC1, dryContact.DC2, dryContact.DC3, dryContact.DC4,
+				 dryContact.DC5, dryContact.DC6, dryContact.DC7, dryContact.DC8);
+		printf("SMOKE_A: %d, SMOKE_B: %d, Status: %s \r\n",
+				 smokeStatus.pinA, smokeStatus.pinB, smokeStatus.status);
+		printf("SHT20 Reading ->Temperature: %.02f \t Humidity: %.02f\r\n", sensors.sht20.temperature, sensors.sht20.humidity);
+		printLineMarker('!');
+#endif
+
+		// Create Payload
+		generateUnscheduledTxPayload(sensors);
+
+		break;
+	default:
+		// do nothing
+		break;
+	}
+
+}
+
 /* USER CODE END 4 */
 
 /**
