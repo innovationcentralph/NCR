@@ -1,0 +1,38 @@
+/*
+ * ATCommands.h
+ *
+ *  Created on: Aug 9, 2024
+ *      Author: Owner
+ */
+
+#ifndef INC_ATCOMMANDS_H_
+#define INC_ATCOMMANDS_H_
+
+#define AT_SET_DEVEUI 		"AT+DEUI=70:B3:D5:7E:D8:00:32:E1\r\n"
+#define AT_SET_APPEUI 		"AT+APPEUI=00:00:00:00:00:00:00:00\r\n"
+#define AT_SET_APPKEY 		"AT+APPKEY=53:45:1A:24:0D:41:50:67:27:E0:E1:99:04:E2:59:B4\r\n"
+#define AT_SET_NWKKEY 		"AT+NWKKEY=53:45:1A:24:0D:41:50:67:27:E0:E1:99:04:E2:59:B4\r\n"
+#define AT_SET_APPSKEY 		"AT+APPSKEY=53:45:1A:24:0D:41:50:67:27:E0:E1:99:04:E2:59:B4\r\n"
+#define AT_SET_NWKSKEY 		"AT+NWKSKEY=53:45:1A:24:0D:41:50:67:27:E0:E1:99:04:E2:59:B4\r\n"
+#define AT_SET_ADR       	"AT+ADR=0\r\n"
+#define AT_SAVE_TO_FLASH 	"AT+CS\r\n"
+#define AT_RST_MCU 		    "ATZ\r\n"
+
+#define AT_JOIN_OTAA   		"AT+JOIN=1\r\n"
+#define AT_ADR_DISABLE   	"AT+ADR=0\r\n"
+#define AT_ADR_ENABLE   	"AT+ADR=1\r\n"
+//#define AT_SEND_            "AT+SEND=1:0:"
+
+typedef enum{
+	UART_IDLE = 0,
+	AT_RESPONSE_CAPTURE_OK,
+	AT_RESPONSE_CAPTURE_NVM_STORED,
+	AT_RESPONSE_CAPTURE_RESET,
+	AT_RESPONSE_CAPTURE_JOIN,
+	AT_RESPONSE_CAPTURE_SEND_OK
+
+}LPUARTState;
+
+
+
+#endif /* INC_ATCOMMANDS_H_ */

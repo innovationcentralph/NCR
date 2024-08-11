@@ -1,0 +1,9 @@
+sht40.c:58:19:SHT40_Measure	2
+sht40.c:69:19:SHT40_Heat	2
+sht40.c:80:19:SHT40_SoftReset	2
+sht40.c:93:19:SHT40_ReadSerial	4
+sht40.c:113:13:verify_checksum	1
+sht40.c:125:26:i2c_communicate	3
+sht40.c:160:26:read_temp_humidity	3
+sht40.c:175:14:hardware_to_celsius	1
+sht40.c:182:14:hardware_to_humidity_percentage	1

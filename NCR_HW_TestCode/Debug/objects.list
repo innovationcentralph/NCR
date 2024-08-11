@@ -8,6 +8,7 @@
 "./Core/Src/system_stm32wbxx.o"
 "./Core/Startup/startup_stm32wb55rgvx.o"
 "./Core/sht2x/sht2x_for_stm32_hal.o"
+"./Core/sht4x/sht40.o"
 "./Drivers/STM32WBxx_HAL_Driver/Src/stm32wbxx_hal.o"
 "./Drivers/STM32WBxx_HAL_Driver/Src/stm32wbxx_hal_cortex.o"
 "./Drivers/STM32WBxx_HAL_Driver/Src/stm32wbxx_hal_dma.o"

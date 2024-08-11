@@ -14,13 +14,13 @@
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
 #define VERSION_MID   1
-#define VERSION_MINOR 1
+#define VERSION_MINOR 2
 
 #define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
-
+#define MAX_UART_BUFFER_SIZE 500
 
 /* MCP23008 Definitions */
-#define MCP23008_ADDR 0x20
+#define MCP23008_ADDR 0x21
 
 // MCP23008 Register Addresses
 #define MCP23008_IODIR    0x00  // I/O Direction Register
@@ -46,7 +46,7 @@ typedef enum {
     TYPE_FLOAT
 } DataType;
 
-typedef enum{
+typedef enum {
 	IDLE = 0,
 	DRY_CONTACT,
 	SMOKE_SENSOR,
@@ -95,15 +95,26 @@ typedef struct {
 } ADL100Status;
 
 
+typedef enum{
+	TEST_PORT = 1,
+	HEARTBEAT_PORT = 2,
+	INTERRUPT_PORT = 3,
+	TEST_UPLINK_PORT = 4
+}UplinkPorts;
 
+typedef enum{
+	CONFIRMED_UPLINK = 1,
+	UNCONFIRMED_UPLINK = 2,
+}UplinkTransmissionState;
+
+typedef struct {
+	float temperature;
+	float humidity;
+}SHT40;
 
 typedef struct{
 
-	struct {
-		float temperature;
-		float humidity;
-	}sht20;
-
+	SHT40 sht40;
 	SmokeStatus smoke;
 	DryContactStatus dryContact;
 

@@ -29,5 +29,6 @@ Core/PWXModbus \
 Core/Src \
 Core/Startup \
 Core/sht2x \
+Core/sht4x \
 Drivers/STM32WBxx_HAL_Driver/Src \
 
