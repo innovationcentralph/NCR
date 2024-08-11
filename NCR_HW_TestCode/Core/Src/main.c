@@ -60,12 +60,15 @@ UnscheduledTxTriggers TxTriggers = IDLE;
 ModBus_t ModbusResp;
 Sensors sensors;
 LPUARTState lpuartState = UART_IDLE;
+LTCStatus LTC4015;
 
 bool hasJoinedNetwork = false;
 
 uint32_t shtReadMillis = 0;
 uint32_t sensorsReadMillis = 0;
 SHT40_Measurement sht40;
+
+DryContactStatus dryContact;
 
 uint8_t getMeterDataCmd[] = GET_METER_CMD;
 
@@ -104,12 +107,14 @@ void scanI2CDevices(void);
 void printLineMarker(char marker); // for debugging
 void handleInterruptTriggers(UnscheduledTxTriggers trigger);
 
+
 //Lora FPF
 bool setLoraCredentials(void);
 bool sendATCommand(char *command, uint32_t responseWaitTime, LPUARTState _lpuartState);
 bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload);
 bool joinNetwork(void);
 bool generatePayload(void **inputs, DataType *types, uint8_t itemCount, MessageType msgType, TxPayload *payload);
+bool generateHeartbeatTxPayload(Sensors sensors, TxPayload *payload);
 
 DryContactStatus MCP23008_ReadInputs(void);
 SmokeStatus ReadSmokeStatus(void);
@@ -173,7 +178,6 @@ int main(void)
 
 
 
-
   // Initialize Modbus
   initModbus(&huart1, MODBUS_EN_GPIO_Port, MODBUS_EN_Pin);
   HAL_UART_Receive_IT(&huart1, (uint8_t *)(ModbusResp.buffer + ModbusResp.rxIndex), 1);
@@ -195,41 +199,35 @@ int main(void)
   WDTReset();
 
 
-//  printf("Setting LoRa Credentials \r\n");
+  printf("Setting LoRa Credentials \r\n");
 //  if(!setLoraCredentials()){
 //	  printf("Error setting LoRa credentials \r\n");
 //  }else{
 //	  printf("Success setting LoRa credentials \r\n");
 //  }
-//
-//  printf("Joining to Network\r\n");
-////  if(!joinNetwork()){
-////	  printf("Error Joining Lora \r\n");
-////  }else{
-////	  printf("Success Joining Lora \r\n");
-////  }
-//
-////  while(hasJoinedNetwork == false){
-////	  joinNetwork();
-////	  printf("Retrying Joining Lora\r\n");
-////  }
-//  printf("Success Joining Lora \r\n");
-//
-//  TxPayload initPayload;
-//  initPayload.buffer[0] = 0x00;
-//  initPayload.buffer[1] = 0x01;
-//  initPayload.buffer[2] = 0x02;
-//  initPayload.length = 3;
-//  initPayload.msgType = DIAGNOSTICS;
-//
-//  //printf("Sending Test Lora Payload\r\n");
-//  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
-//
-//  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
-//
-//  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
-//
-//
+
+  printf("Joining to Network\r\n");
+
+//  while(hasJoinedNetwork == false){
+//	  joinNetwork();
+//	  printf("Retrying Joining Lora\r\n");
+//  }
+  printf("Success Joining Lora \r\n");
+
+  TxPayload initPayload;
+  initPayload.buffer[0] = 0x00;
+  initPayload.buffer[1] = 0x01;
+  initPayload.buffer[2] = 0x02;
+  initPayload.length = 3;
+  initPayload.msgType = DIAGNOSTICS;
+
+  //printf("Sending Test Lora Payload\r\n");
+  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
+
+  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
+
+  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
+
 
 
   while (1)
@@ -268,10 +266,14 @@ int main(void)
 	    // Read DryContacts
 	    sensors.dryContact = MCP23008_ReadInputs();
 
-	    // Read ModBus Device
+	    // PLaceholder for LTC4015
+	    sensors.ltc4015.VIN = 24.123;
+	    sensors.ltc4015.VBAT = 12.456;
+	    sensors.ltc4015.VSYS = 5.789;
 
-	    sendRaw(getMeterDataCmd, GetMeterData_LEN, &ModbusResp);
-	    HAL_Delay(2000); // Give time to receive response
+	    // Read ModBus Device
+	    //sendRaw(getMeterDataCmd, GetMeterData_LEN, &ModbusResp);
+	    //HAL_Delay(2000); // Give time to receive response
 
 #ifdef SCAN_I2C_DEVICES
   		scanI2CDevices();
@@ -293,6 +295,12 @@ int main(void)
 	    printf(" \r\n");
 	    printLineMarker('-');
 #endif
+
+	    // Generate HEARTBEAT Payload
+	    TxPayload _heartBeatPayload;
+	    generateHeartbeatTxPayload(sensors, &_heartBeatPayload);
+
+	    sendToLora(HEARTBEAT_PORT, CONFIRMED_UPLINK, _heartBeatPayload);
 
   		sensorsReadMillis = HAL_GetTick();
   	  }
@@ -580,8 +588,9 @@ DryContactStatus MCP23008_ReadInputs(void)
 
     // Request to read GPIO register
     data[0] = MCP23008_GPIO;
-    HAL_I2C_Master_Transmit(&hi2c1, MCP23008_ADDR << 1, data, 1, HAL_MAX_DELAY);
 
+    HAL_I2C_Master_Transmit(&hi2c1, MCP23008_ADDR << 1, data, 1, HAL_MAX_DELAY);
+    //HAL_Delay(50);
     // Read GPIO register
     HAL_I2C_Master_Receive(&hi2c1, MCP23008_ADDR << 1, &gpioState, 1, HAL_MAX_DELAY);
 
@@ -595,6 +604,32 @@ DryContactStatus MCP23008_ReadInputs(void)
 	dryContact.DC6 = (gpioState & (1 << 5)) ? true : false;
 	dryContact.DC7 = (gpioState & (1 << 6)) ? true : false;
 	dryContact.DC8 = (gpioState & (1 << 7)) ? true : false;
+
+	return dryContact;
+}
+
+DryContactStatus MCP23008_ReadCapturedINT(void){
+    uint8_t data[1];
+    uint8_t gpioState;
+
+    // Request to read GPIO register
+    data[0] = MCP23008_INTCAP;
+
+    HAL_I2C_Master_Transmit(&hi2c1, MCP23008_ADDR << 1, data, 1, HAL_MAX_DELAY);
+    //HAL_Delay(10);
+    // Read GPIO register
+    HAL_I2C_Master_Receive(&hi2c1, MCP23008_ADDR << 1, &gpioState, 1, HAL_MAX_DELAY);
+
+//    DryContactStatus dryContact;
+    dryContact.value = gpioState;
+//	dryContact.DC1 = (gpioState & (1 << 0)) ? true : false;
+//	dryContact.DC2 = (gpioState & (1 << 1)) ? true : false;
+//	dryContact.DC3 = (gpioState & (1 << 2)) ? true : false;
+//	dryContact.DC4 = (gpioState & (1 << 3)) ? true : false;
+//	dryContact.DC5 = (gpioState & (1 << 4)) ? true : false;
+//	dryContact.DC6 = (gpioState & (1 << 5)) ? true : false;
+//	dryContact.DC7 = (gpioState & (1 << 6)) ? true : false;
+//	dryContact.DC8 = (gpioState & (1 << 7)) ? true : false;
 
 	return dryContact;
 }
@@ -646,6 +681,7 @@ void HAL_GPIO_EXTI_IRQHandler(uint16_t GPIO_Pin)
     switch(GPIO_Pin)
     {
       case GPIO_PIN_15:
+    	  MCP23008_ReadCapturedINT();
     	  TxTriggers = DRY_CONTACT;
           break;
       case SMOKE_A_Pin:
@@ -746,7 +782,23 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					  }
 					  break;
 				  case AT_RESPONSE_CAPTURE_SEND_OK:
-					  // do nothing for now
+					  if (strstr(responseBuffer, "NO_NETWORK_JOINED") != NULL) {
+						  //responseReceived = true;
+
+						  //printf("ERROR JOIN\r\n");
+						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
+						  bufferIndex = 0;
+						  //lpuartState = UART_IDLE;
+					  }
+					  else if (strstr(responseBuffer, "OK") != NULL) {
+						  responseReceived = true;
+						  printf("SEND PARAM OK\r\n");
+						  //hasJoinedNetwork = false;
+						  //printf("EVENT JOIN FAILED\r\n");
+						  bufferIndex = 0;
+						  //lpuartState = UART_IDLE;
+						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
+					  }
 					  break;
 				  case UART_IDLE:
 					  // do nothing for now
@@ -795,7 +847,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void WDTReset(void){
 	HAL_GPIO_WritePin(WDT_DONE_GPIO_Port, WDT_DONE_Pin, GPIO_PIN_SET);
-	HAL_Delay(300);
+	HAL_Delay(5);
 	HAL_GPIO_WritePin(WDT_DONE_GPIO_Port, WDT_DONE_Pin, GPIO_PIN_RESET);
 }
 
@@ -878,22 +930,47 @@ bool generatePayload(void **inputs, DataType *types, uint8_t itemCount, MessageT
     return true;
 }
 
-bool generateUnscheduledTxPayload(Sensors sensors){
-
-	TxPayload payload;
+bool generateUnscheduledTxPayload(Sensors sensors, TxPayload *payload){
 
 	MessageType msgType = UNSCHEDULED_TRANSMISSION;
 
-	void *inputs[] = { &sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value, &sensors.smoke.level };
+	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value, &sensors.smoke.level};
 	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8 };
 
-	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, &payload);
+	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
 
 #ifdef SERIAL_DEBUG_PAYLOADCHECK
 	if(ret){
-		printf("UNSCHEDULED PAYLOAD: ");
-		for (uint8_t i = 0; i < payload.length; ++i) {
-			printf("%02X ", payload.buffer[i]);
+		printf("HEARTBEAT PAYLOAD: ");
+		for (uint8_t i = 0; i < payload->length; ++i) {
+			printf("%02X ", payload->buffer[i]);
+		}
+		printf("\r\n ");
+	}
+	else{
+		printf("Failed to generate payload\n");
+	}
+#endif
+
+	return ret;
+}
+
+bool generateHeartbeatTxPayload(Sensors sensors, TxPayload *payload){
+
+	MessageType msgType = HEARTBEAT;
+
+	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value,
+					  &sensors.smoke.level, &sensors.ltc4015.VIN, &sensors.ltc4015.VBAT, &sensors.ltc4015.VSYS};
+
+	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT };
+
+	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
+
+#ifdef SERIAL_DEBUG_PAYLOADCHECK
+	if(ret){
+		printf("HEARTBEAT PAYLOAD: ");
+		for (uint8_t i = 0; i < payload->length; ++i) {
+			printf("%02X ", payload->buffer[i]);
 		}
 		printf("\r\n ");
 	}
@@ -908,13 +985,13 @@ bool generateUnscheduledTxPayload(Sensors sensors){
 void handleInterruptTriggers(UnscheduledTxTriggers trigger){
 
 	// clear remaining interrupts
-	__HAL_GPIO_EXTI_CLEAR_IT(SMOKE_A_Pin);
-	__HAL_GPIO_EXTI_CLEAR_IT(SMOKE_B_Pin);
-	__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_15);
+	//__HAL_GPIO_EXTI_CLEAR_IT(SMOKE_A_Pin);
+	//__HAL_GPIO_EXTI_CLEAR_IT(SMOKE_B_Pin);
+	//__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_15);
 
 
-	DryContactStatus dryContact;
-	SmokeStatus smokeStatus;
+	//DryContactStatus dryContact;
+	//SmokeStatus smokeStatus;
 	switch(trigger){
 	case IDLE:
 		// do nothing
@@ -922,27 +999,31 @@ void handleInterruptTriggers(UnscheduledTxTriggers trigger){
 	case DRY_CONTACT:
 	case SMOKE_SENSOR:
 	case SHT:
-		smokeStatus = ReadSmokeStatus();
-		sensors.sht40.temperature = SHT2x_GetTemperature(1);
-	    sensors.sht40.humidity = SHT2x_GetRelativeHumidity(1);
 
-	    HAL_Delay(100); // Give time for the pin signal to settle down
-	    dryContact = MCP23008_ReadInputs();
+		sensors.dryContact = MCP23008_ReadInputs();
+
+	    sensors.smoke = ReadSmokeStatus();
+
+	    readSHT40(&sensors.sht40);
 
 
 #ifdef SERIAL_DEBUG_INTERRUPT
 		printLineMarker('!');
-		printf("DRY CONTACT: %d %d %d %d %d %d %d %d \r\n",
-				 dryContact.DC1, dryContact.DC2, dryContact.DC3, dryContact.DC4,
-				 dryContact.DC5, dryContact.DC6, dryContact.DC7, dryContact.DC8);
-		printf("SMOKE_A: %d, SMOKE_B: %d, Status: %s \r\n",
-				 smokeStatus.pinA, smokeStatus.pinB, smokeStatus.status);
-		printf("SHT20 Reading ->Temperature: %.02f \t Humidity: %.02f\r\n", sensors.sht40.temperature, sensors.sht40.humidity);
+		printf("\nDRY CONTACT: %d %d %d %d %d %d %d %d \r\n",
+				sensors.dryContact.DC8, sensors.dryContact.DC7, sensors.dryContact.DC6, sensors.dryContact.DC5,
+				sensors.dryContact.DC4, sensors.dryContact.DC3, sensors.dryContact.DC2, sensors.dryContact.DC1);
+		printf("\nSMOKE_A: %d, SMOKE_B: %d, Status: %s \r\n",
+				sensors.smoke.pinA, sensors.smoke.pinB, sensors.smoke.status);
+		printf("\nSHT20 Reading ->Temperature: %.02f \t Humidity: %.02f\r\n", sensors.sht40.temperature, sensors.sht40.humidity);
 		printLineMarker('!');
 #endif
 
 		// Create Payload
-		generateUnscheduledTxPayload(sensors);
+		// Generate Unscheduled Payload
+		TxPayload _heartBeatPayload;
+		generateUnscheduledTxPayload(sensors, &_heartBeatPayload);
+
+		sendToLora(INTERRUPT_PORT, CONFIRMED_UPLINK, _heartBeatPayload);
 
 		TxTriggers = IDLE;
 
@@ -989,59 +1070,6 @@ bool joinNetwork(void){
 	return true;
 }
 
-//void combineMessage(const TxPayload *payload, char *output, size_t outputSize) {
-//    // Check for buffer size
-//    if (outputSize < strlen(AT_SEND_) + payload->length * 2 + 1) { // 2 hex digits per byte, +1 for null terminator
-//        // Output buffer is too small
-//        return;
-//    }
-//
-//    // Start with the AT_SEND_ prefix
-//    snprintf(output, outputSize, "%s", AT_SEND_);
-//
-////    // Append the payload length as a hex string
-////    char lengthStr[5];
-////    snprintf(lengthStr, sizeof(lengthStr), "%02X", payload->length);
-////    strncat(output, lengthStr, outputSize - strlen(output) - 1);
-//
-//    // Append the buffer content as hex string
-//    for (uint8_t i = 0; i < payload->length; ++i) {
-//        char hex[3];
-//        snprintf(hex, sizeof(hex), "%02X", payload->buffer[i]);
-//        strncat(output, hex, outputSize - strlen(output) - 1);
-//    }
-//}
-
-//// Function to concatenate AT_SEND_, payload buffer, convert buffer to hex, and add \r\n at the end
-//char* concatenateAT_SEND(const char *AT_SEND_, const uint8_t *payload_buffer, int payload_length) {
-//    // Calculate the total length needed for the new string
-//    // Each byte in payload becomes 2 hex characters, +2 for \r\n, +1 for null terminator
-//    int total_length = strlen(AT_SEND_) + (payload_length * 2) + 2 + 1;
-//
-//    // Allocate memory for the new string
-//    char *result = (char *)malloc(total_length * sizeof(char));
-//
-//    if (result == NULL) {
-//        // Handle memory allocation failure
-//        return NULL;
-//    }
-//
-//    // Copy the initial string to the result
-//    strcpy(result, AT_SEND_);
-//
-//    // Concatenate the payload as hex string
-//    for (int x = 0; x < payload_length; x++) {
-//        char temp[3]; // Buffer to hold hex representation (2 digits + null terminator)
-//        snprintf(temp, sizeof(temp), "%02X", payload_buffer[x]); // Convert to hex
-//        strcat(result, temp); // Append hex string to result
-//    }
-//
-//    // Append \r\n at the end
-//    strcat(result, "\r\n");
-//
-//    return result;
-//}
-
 char* buildATCommand(const char *AT_SEND_, TxPayload payload) {
     // Calculate the total length needed for the new string
     // Each byte in payload becomes 2 hex characters, +2 for \r\n, +1 for null terminator
@@ -1071,15 +1099,6 @@ char* buildATCommand(const char *AT_SEND_, TxPayload payload) {
     return result;
 }
 
-//bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload){
-//
-//	char *result = concatenateAT_SEND(AT_SEND_, payload);
-//
-//	if(!sendATCommand(result, 2000, AT_RESPONSE_CAPTURE_OK)){
-//		return false;
-//	}
-//
-//}
 
 bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload){
 	// Base command string
@@ -1110,11 +1129,6 @@ bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload){
 	strcat(result, confirmedUplinkStr);
 	strcat(result, ":");
 
-	// Format with message type
-	char temp[3];
-	snprintf(temp, sizeof(temp), "%02X", payload.msgType);
-	strcat(result, temp);
-
 	// Concatenate the payload
 	for (int x = 0; x < payload.length; x++) {
 		char temp[3];
@@ -1126,7 +1140,7 @@ bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload){
 	strcat(result, "\r\n");
 
 	// Send the command
-	bool commandSent = sendATCommand(result, 2000, AT_RESPONSE_CAPTURE_OK);
+	bool commandSent = sendATCommand(result, 2000, AT_RESPONSE_CAPTURE_SEND_OK);
 
 	// Free the allocated memory
 	free(result);

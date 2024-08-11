@@ -14,7 +14,7 @@
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
 #define VERSION_MID   1
-#define VERSION_MINOR 2
+#define VERSION_MINOR 3
 
 #define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
 #define MAX_UART_BUFFER_SIZE 500
@@ -117,7 +117,7 @@ typedef struct{
 	SHT40 sht40;
 	SmokeStatus smoke;
 	DryContactStatus dryContact;
-
+	LTCStatus ltc4015;
 }Sensors;
 
 typedef enum {
@@ -136,11 +136,11 @@ typedef struct{
 
 
 // System Behavior Macros
-#define SERIAL_DEBUG_SHT
+//#define SERIAL_DEBUG_SHT
 #define SERIAL_DEBUG_SENSORS
 #define SERIAL_DEBUG_INTERRUPT
 #define SCAN_I2C_DEVICES
-#define SERIAL_DEBUG_PAYLOADCHECK
+//#define SERIAL_DEBUG_PAYLOADCHECK
 
 #define SHT_READ_INTERVAL 1000
 #define DEVICE_HEARTBEAL  5000
