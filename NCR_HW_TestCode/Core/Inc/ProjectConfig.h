@@ -14,7 +14,7 @@
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
 #define VERSION_MID   1
-#define VERSION_MINOR 3
+#define VERSION_MINOR 4
 
 #define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
 #define MAX_UART_BUFFER_SIZE 500
@@ -31,6 +31,15 @@
 #define MCP23008_INTCAP   0x08  // Interrupt Capture Register
 #define MCP23008_IOCON    0x05  // IO Expander Control Register
 
+/* Private macro for Accelerometer -------------------------------------------------------------*/
+#define    BOOT_TIME            20 //ms
+
+/* Self-test recommended samples */
+#define SELF_TEST_SAMPLES  5
+
+/* Self-test positive difference */
+#define ST_MIN_POS      70.0f
+#define ST_MAX_POS      1500.0f
 
 
 // Structure Definitions
@@ -112,12 +121,23 @@ typedef struct {
 	float humidity;
 }SHT40;
 
+typedef enum{
+	STATIONARY = 1,
+	SMASHED = 2,
+	MOVING = 3
+}AccelState;
+
+typedef struct {
+	AccelState status;
+}Accel;
+
 typedef struct{
 
 	SHT40 sht40;
 	SmokeStatus smoke;
 	DryContactStatus dryContact;
 	LTCStatus ltc4015;
+	Accel accel;
 }Sensors;
 
 typedef enum {
@@ -134,16 +154,21 @@ typedef struct{
 	uint8_t length;
 }TxPayload;
 
+typedef union {
+  int16_t i16bit[3];
+} axis3bit16_t;
+
 
 // System Behavior Macros
 //#define SERIAL_DEBUG_SHT
 #define SERIAL_DEBUG_SENSORS
-#define SERIAL_DEBUG_INTERRUPT
+//#define SERIAL_DEBUG_INTERRUPT
 #define SCAN_I2C_DEVICES
 //#define SERIAL_DEBUG_PAYLOADCHECK
 
 #define SHT_READ_INTERVAL 1000
-#define DEVICE_HEARTBEAL  5000
+#define DEVICE_HEARTBEAT  10000
+#define WDT_RESET_INTERVAL 5000
 
 
 

@@ -66,6 +66,7 @@ bool hasJoinedNetwork = false;
 
 uint32_t shtReadMillis = 0;
 uint32_t sensorsReadMillis = 0;
+uint32_t wdtResetMillis = 0;
 SHT40_Measurement sht40;
 
 DryContactStatus dryContact;
@@ -76,6 +77,18 @@ uint8_t getMeterDataCmd[] = GET_METER_CMD;
 static bool responseReceived = false;
 static char responseBuffer[100];
 static uint16_t bufferIndex = 0;
+
+// Accelerometer related
+static axis3bit16_t data_raw_acceleration[SELF_TEST_SAMPLES];
+static float acceleration_mg[SELF_TEST_SAMPLES][3];
+static uint8_t whoamI, rst;
+static uint8_t tx_buffer[1000];
+stmdev_ctx_t dev_ctx;
+lis2dw12_reg_t int_route;
+
+bool isTapDetected = false;
+bool isMovementDetected = false;
+uint32_t initTapMillis = 0;
 
 /* USER CODE END PV */
 
@@ -119,10 +132,144 @@ bool generateHeartbeatTxPayload(Sensors sensors, TxPayload *payload);
 DryContactStatus MCP23008_ReadInputs(void);
 SmokeStatus ReadSmokeStatus(void);
 
+
+// Accelerometer PFP
+static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len);
+static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
+static void tx_com( uint8_t *tx_buffer, uint16_t len );
+static void platform_delay(uint32_t ms);
+static void platform_init(void);
+bool initAccelerometer(void);
+void readAccelerometer(Accel *_accel);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static inline float ABSF(float _x)
+{
+  return (_x < 0.0f) ? -(_x) : _x;
+}
+
+static int flush_samples(stmdev_ctx_t *dev_ctx)
+{
+  lis2dw12_reg_t reg;
+  axis3bit16_t dummy;
+  int samples = 0;
+  /*
+   * Discard old samples
+   */
+  lis2dw12_status_reg_get(dev_ctx, &reg.status);
+
+  if (reg.status.drdy) {
+    lis2dw12_acceleration_raw_get(dev_ctx, dummy.i16bit);
+    samples++;
+  }
+
+  return samples;
+}
+
+static void test_self_test_lis2dw12(stmdev_ctx_t *dev_ctx)
+{
+  lis2dw12_reg_t reg;
+  float media[3] = { 0.0f, 0.0f, 0.0f };
+  float mediast[3] = { 0.0f, 0.0f, 0.0f };
+  uint8_t match[3] = { 0, 0, 0 };
+  uint8_t j = 0;
+  uint16_t i = 0;
+  uint8_t k = 0;
+  uint8_t axis;
+  /* Restore default configuration */
+  lis2dw12_reset_set(dev_ctx, PROPERTY_ENABLE);
+
+  do {
+    lis2dw12_reset_get(dev_ctx, &rst);
+  } while (rst);
+
+  lis2dw12_block_data_update_set(dev_ctx, PROPERTY_ENABLE);
+  lis2dw12_full_scale_set(dev_ctx, LIS2DW12_4g);
+  lis2dw12_power_mode_set(dev_ctx, LIS2DW12_HIGH_PERFORMANCE);
+  lis2dw12_data_rate_set(dev_ctx, LIS2DW12_XL_ODR_50Hz);
+  HAL_Delay(100);
+  /* Flush old samples */
+  flush_samples(dev_ctx);
+
+  do {
+    lis2dw12_status_reg_get(dev_ctx, &reg.status);
+
+    if (reg.status.drdy) {
+      /* Read accelerometer data */
+      memset(data_raw_acceleration[i].i16bit, 0x00, 3 * sizeof(int16_t));
+      lis2dw12_acceleration_raw_get(dev_ctx,
+                                    data_raw_acceleration[i].i16bit);
+
+      for (axis = 0; axis < 3; axis++) {
+        acceleration_mg[i][axis] =
+          lis2dw12_from_fs4_to_mg(data_raw_acceleration[i].i16bit[axis]);
+      }
+
+      i++;
+    }
+  } while (i < SELF_TEST_SAMPLES);
+
+  for (k = 0; k < 3; k++) {
+    for (j = 0; j < SELF_TEST_SAMPLES; j++) {
+      media[k] += acceleration_mg[j][k];
+    }
+
+    media[k] = (media[k] / j);
+  }
+
+  /* Enable self test mode */
+  lis2dw12_self_test_set(dev_ctx, LIS2DW12_XL_ST_POSITIVE);
+  HAL_Delay(100);
+  i = 0;
+  /* Flush old samples */
+  flush_samples(dev_ctx);
+
+  do {
+    lis2dw12_status_reg_get(dev_ctx, &reg.status);
+
+    if (reg.status.drdy) {
+      /* Read accelerometer data */
+      memset(data_raw_acceleration[i].i16bit, 0x00, 3 * sizeof(int16_t));
+      lis2dw12_acceleration_raw_get(dev_ctx,
+                                    data_raw_acceleration[i].i16bit);
+
+      for (axis = 0; axis < 3; axis++)
+        acceleration_mg[i][axis] =
+          lis2dw12_from_fs4_to_mg(data_raw_acceleration[i].i16bit[axis]);
+
+      i++;
+    }
+  } while (i < SELF_TEST_SAMPLES);
+
+  for (k = 0; k < 3; k++) {
+    for (j = 0; j < SELF_TEST_SAMPLES; j++) {
+      mediast[k] += acceleration_mg[j][k];
+    }
+
+    mediast[k] = (mediast[k] / j);
+  }
+
+  /* Check for all axis self test value range */
+  for (k = 0; k < 3; k++) {
+    if ((ABSF(mediast[k] - media[k]) >= ST_MIN_POS) &&
+        (ABSF(mediast[k] - media[k]) <= ST_MAX_POS)) {
+      match[k] = 1;
+    }
+
+    sprintf((char *)tx_buffer, "%d: |%f| <= |%f| <= |%f| %s\r\n", k,
+            ST_MIN_POS, ABSF(mediast[k] - media[k]), ST_MAX_POS,
+            match[k] == 1 ? "PASSED" : "FAILED");
+    tx_com(tx_buffer, strlen((char const *)tx_buffer));
+  }
+
+  /* Disable self test mode */
+  lis2dw12_data_rate_set(dev_ctx, LIS2DW12_XL_ODR_OFF);
+  lis2dw12_self_test_set(dev_ctx, LIS2DW12_XL_ST_DISABLE);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -169,13 +316,19 @@ int main(void)
   MCP23008_ConfigureInterrupts();
 
   // Initialize SHT20 Sensor
-    uint32_t sht40_serial;
-    if( SHT40_ReadSerial(&hi2c1, &sht40_serial) != HAL_ERROR ) {
+  uint32_t sht40_serial;
+  if( SHT40_ReadSerial(&hi2c1, &sht40_serial) != HAL_ERROR ) {
 		printf("I2C connection established to SHT40 with serial %" PRIu32 "\r\n", sht40_serial);
-	} else {
+  } else {
 		printf("Failed to read serial from SHT40; check connections and reset MCU\r\n");
-	}
+  }
 
+  if(initAccelerometer()){
+	  printf("Accelerometer Initialized \r\n ");
+  }
+  else{
+	  printf("Error Accelerometer Initialization \r\n ");
+  }
 
 
   // Initialize Modbus
@@ -200,17 +353,17 @@ int main(void)
 
 
   printf("Setting LoRa Credentials \r\n");
-//  if(!setLoraCredentials()){
-//	  printf("Error setting LoRa credentials \r\n");
-//  }else{
-//	  printf("Success setting LoRa credentials \r\n");
-//  }
+  if(!setLoraCredentials()){
+	  printf("Error setting LoRa credentials \r\n");
+  }else{
+	  printf("Success setting LoRa credentials \r\n");
+  }
 
-  printf("Joining to Network\r\n");
+  printf("Joining to Network \r\n");
 
 //  while(hasJoinedNetwork == false){
-//	  joinNetwork();
-//	  printf("Retrying Joining Lora\r\n");
+////	  joinNetwork();
+////	  printf("Retrying Joining Lora\r\n");
 //  }
   printf("Success Joining Lora \r\n");
 
@@ -224,14 +377,25 @@ int main(void)
   //printf("Sending Test Lora Payload\r\n");
   sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
 
-  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
-
-  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
+//  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
+//
+//  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
 
 
 
   while (1)
   {
+	  if(HAL_GetTick() - wdtResetMillis > WDT_RESET_INTERVAL){
+		  WDTReset();
+		  wdtResetMillis = HAL_GetTick();
+	  }
+
+	  readAccelerometer(&sensors.accel);
+
+
+
+
+	//test_self_test_lis2dw12(&dev_ctx);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -255,7 +419,7 @@ int main(void)
   	  }
 
   	  // Read All Sensors every Y Interval
-  	  if(HAL_GetTick() - sensorsReadMillis > DEVICE_HEARTBEAL){
+  	  if(HAL_GetTick() - sensorsReadMillis > DEVICE_HEARTBEAT){
 
   		// Read SHT20
   		readSHT40(&sensors.sht40);
@@ -305,7 +469,6 @@ int main(void)
   		sensorsReadMillis = HAL_GetTick();
   	  }
 
-  	WDTReset();
 
 
   }
@@ -766,14 +929,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					  }
 					  break;
 				  case AT_RESPONSE_CAPTURE_JOIN:
-					  if (strstr(responseBuffer, "EVT:JOINED") != NULL) {
+				  {
+					  if (strstr(responseBuffer, "JOINED") != NULL) {
 						  responseReceived = true;
 						  hasJoinedNetwork = true;
-						  printf("EVENT JOINED\r\n");
+						  //printf("EVENT JOINED\r\n");
 						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
 						  bufferIndex = 0;
 					  }
-					  else if (strstr(responseBuffer, "EVT:JOIN FAILED") != NULL) {
+					  else if (strstr(responseBuffer, "JOIN FAILED") != NULL) {
 						  //responseReceived = true;
 						  hasJoinedNetwork = false;
 						  //printf("EVENT JOIN FAILED\r\n");
@@ -781,6 +945,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
 					  }
 					  break;
+				  }
 				  case AT_RESPONSE_CAPTURE_SEND_OK:
 					  if (strstr(responseBuffer, "NO_NETWORK_JOINED") != NULL) {
 						  //responseReceived = true;
@@ -847,7 +1012,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void WDTReset(void){
 	HAL_GPIO_WritePin(WDT_DONE_GPIO_Port, WDT_DONE_Pin, GPIO_PIN_SET);
-	HAL_Delay(5);
+	HAL_Delay(1);
 	HAL_GPIO_WritePin(WDT_DONE_GPIO_Port, WDT_DONE_Pin, GPIO_PIN_RESET);
 }
 
@@ -934,8 +1099,8 @@ bool generateUnscheduledTxPayload(Sensors sensors, TxPayload *payload){
 
 	MessageType msgType = UNSCHEDULED_TRANSMISSION;
 
-	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value, &sensors.smoke.level};
-	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8 };
+	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value, &sensors.smoke.level, &sensors.accel.status};
+	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_UINT8};
 
 	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
 
@@ -1065,6 +1230,7 @@ bool setLoraCredentials(void){
 
 bool joinNetwork(void){
 	if(!sendATCommand(AT_JOIN_OTAA, 20000, AT_RESPONSE_CAPTURE_JOIN)){
+		HAL_NVIC_SystemReset();
 		return false;
 	}
 	return true;
@@ -1182,6 +1348,204 @@ void readSHT40(SHT40 *_sht40){
 	}
 
 }
+
+
+static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp,
+                              uint16_t len)
+{
+	HAL_I2C_Mem_Write(handle, LIS2DW12_I2C_ADD_L, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len, 1000);
+  return 0;
+}
+
+/*
+ * @brief  Read generic device register (platform dependent)
+ *
+ * @param  handle    customizable argument. In this examples is used in
+ *                   order to select the correct sensor bus handler.
+ * @param  reg       register to read
+ * @param  bufp      pointer to buffer that store the data read
+ * @param  len       number of consecutive register to read
+ *
+ */
+static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp,
+                             uint16_t len)
+{
+	HAL_I2C_Mem_Read(handle, LIS2DW12_I2C_ADD_L, reg, I2C_MEMADD_SIZE_8BIT, bufp, len, 1000);
+
+  return 0;
+}
+
+/*
+ * @brief  Write generic device register (platform dependent)
+ *
+ * @param  tx_buffer     buffer to transmit
+ * @param  len           number of byte to send
+ *
+ */
+static void tx_com(uint8_t *tx_buffer, uint16_t len)
+{
+	HAL_UART_Transmit(&hlpuart1, tx_buffer, len, 1000);
+}
+
+/*
+ * @brief  platform specific delay (platform dependent)
+ *
+ * @param  ms        delay in ms
+ *
+ */
+static void platform_delay(uint32_t ms)
+{
+	HAL_Delay(ms);
+
+}
+
+/*
+ * @brief  platform specific initialization (platform dependent)
+ */
+static void platform_init(void)
+{
+
+}
+
+bool initAccelerometer(void){
+	// Initialize Accelerometer
+	/* Initialize mems driver interface */
+
+	  dev_ctx.write_reg = platform_write;
+	  dev_ctx.read_reg = platform_read;
+	  dev_ctx.mdelay = platform_delay;
+	  dev_ctx.handle = &hi2c1;
+	  /* Initialize platform specific hardware */
+	  platform_init();
+	  /* Wait sensor boot time */
+	  platform_delay(BOOT_TIME);
+	  /* Check device ID */
+	  lis2dw12_device_id_get(&dev_ctx, &whoamI);
+
+	  if (whoamI != LIS2DW12_ID){
+		  return false;
+	  }
+
+	  /* Restore default configuration */
+	   lis2dw12_reset_set(&dev_ctx, PROPERTY_ENABLE);
+
+	   do {
+		 lis2dw12_reset_get(&dev_ctx, &rst);
+	   } while (rst);
+
+
+     /* Set full scale */
+	 lis2dw12_full_scale_set(&dev_ctx, LIS2DW12_2g);
+	 /* Configure filtering chain
+	  * Accelerometer - filter path / bandwidth
+	  */
+	 lis2dw12_filter_path_set(&dev_ctx, LIS2DW12_LPF_ON_OUT);
+	 lis2dw12_filter_bandwidth_set(&dev_ctx, LIS2DW12_ODR_DIV_4);
+	 /* Configure power mode */
+	 lis2dw12_power_mode_set(&dev_ctx,
+							 LIS2DW12_CONT_LOW_PWR_LOW_NOISE_12bit);
+
+//	 /* Enable Tap detection on X, Y, Z */
+//	  lis2dw12_tap_detection_on_z_set(&dev_ctx, PROPERTY_ENABLE);
+//	  lis2dw12_tap_detection_on_y_set(&dev_ctx, PROPERTY_ENABLE);
+//	  lis2dw12_tap_detection_on_x_set(&dev_ctx, PROPERTY_ENABLE);
+//	  /* Set Tap threshold on all axis */
+//	  lis2dw12_tap_threshold_x_set(&dev_ctx, 15);
+//	  lis2dw12_tap_threshold_y_set(&dev_ctx, 15);
+//	  lis2dw12_tap_threshold_z_set(&dev_ctx, 15);
+//
+//	  /* Configure Single Tap parameter */
+//	    lis2dw12_tap_quiet_set(&dev_ctx, 1);
+//	    lis2dw12_tap_shock_set(&dev_ctx, 3);
+//	    /* Enable Single Tap detection only */
+//	    lis2dw12_tap_mode_set(&dev_ctx, LIS2DW12_ONLY_SINGLE);
+//	    /* Enable single tap detection interrupt */
+//	    lis2dw12_pin_int1_route_get(&dev_ctx, &int_route.ctrl4_int1_pad_ctrl);
+//	    int_route.ctrl4_int1_pad_ctrl.int1_single_tap = PROPERTY_ENABLE;
+//	    lis2dw12_pin_int1_route_set(&dev_ctx, &int_route.ctrl4_int1_pad_ctrl);
+
+	 /* Set wake-up duration
+	  * Wake up duration event 1LSb = 1 / ODR
+	  */
+	 lis2dw12_wkup_dur_set(&dev_ctx, 2);
+	 /* Set sleep duration
+	  * Duration to go in sleep mode (1 LSb = 512 / ODR)
+	  */
+	 lis2dw12_act_sleep_dur_set(&dev_ctx, 3);
+	 /* Set Activity wake-up threshold
+	  * Threshold for wake-up 1 LSB = FS_XL / 64
+	  */
+	 lis2dw12_wkup_threshold_set(&dev_ctx, 1);
+	 /* Data sent to wake-up interrupt function */
+	 lis2dw12_wkup_feed_data_set(&dev_ctx, LIS2DW12_HP_FEED);
+	 /* Config activity / inactivity or stationary / motion detection */
+	 lis2dw12_act_mode_set(&dev_ctx, LIS2DW12_DETECT_ACT_INACT);
+	 /* Enable activity detection interrupt */
+	 lis2dw12_pin_int1_route_get(&dev_ctx, &int_route.ctrl4_int1_pad_ctrl);
+	 int_route.ctrl4_int1_pad_ctrl.int1_wu = PROPERTY_ENABLE;
+	 lis2dw12_pin_int1_route_set(&dev_ctx, &int_route.ctrl4_int1_pad_ctrl);
+	 /* Set Output Data Rate */
+	 lis2dw12_data_rate_set(&dev_ctx, LIS2DW12_XL_ODR_200Hz);
+
+	 //init sensors struct
+	 sensors.accel.status = STATIONARY;
+
+	 return true;
+}
+
+void readAccelerometer(Accel *_accel){
+	lis2dw12_all_sources_t all_source;
+	  /* Read status register */
+	  lis2dw12_all_sources_get(&dev_ctx, &all_source);
+
+
+	  /* Check if Activity/Inactivity events */
+	  if (all_source.wake_up_src.sleep_state_ia) {
+		  //Inactivity
+		  // Reset after sending Interrupt
+//		  if(isTapDetected || isMovementDetected){
+			  isTapDetected = false;
+			  isMovementDetected = false;
+//			  printf("Resetting flags \r\n ");
+//		  }
+	  }
+
+	  if (all_source.wake_up_src.wu_ia) {
+
+		// Activity
+		if(isTapDetected == false){
+			isTapDetected = true;
+			_accel->status = SMASHED;
+			printf("Smash Detected \nX: %d \nY: %d \nZ: %d\r\n ", all_source.wake_up_src.x_wu, all_source.wake_up_src.y_wu, all_source.wake_up_src.z_wu);
+
+			initTapMillis = HAL_GetTick();
+
+			TxPayload _heartBeatPayload;
+			generateUnscheduledTxPayload(sensors, &_heartBeatPayload);
+			sendToLora(INTERRUPT_PORT, CONFIRMED_UPLINK, _heartBeatPayload);
+
+     		//isTapDetected = false;
+ 			//isMovementDetected = false;
+		}
+		if(isTapDetected == true){
+			if(HAL_GetTick() - initTapMillis > 3000){
+				if(isMovementDetected == false){
+					isMovementDetected = true;
+					_accel->status = MOVING;
+					printf("Movement Detected \r\n ");
+
+					TxPayload _heartBeatPayload;
+					generateUnscheduledTxPayload(sensors, &_heartBeatPayload);
+					sendToLora(INTERRUPT_PORT, CONFIRMED_UPLINK, _heartBeatPayload);
+
+					isTapDetected = false;
+					isMovementDetected = false;
+				}
+			}
+		}
+	  }
+}
+
 /* USER CODE END 4 */
 
 /**
