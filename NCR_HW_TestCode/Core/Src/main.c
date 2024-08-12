@@ -71,7 +71,8 @@ SHT40_Measurement sht40;
 
 DryContactStatus dryContact;
 
-uint8_t getMeterDataCmd[] = GET_METER_CMD;
+uint8_t getMeterDataCmd1[] = GET_METER_ERG_CMD;
+uint8_t getMeterDataCmd2[] = GET_METER_BASIC_CMD;
 
 // LPUART 1 Variables
 static bool responseReceived = false;
@@ -79,10 +80,10 @@ static char responseBuffer[100];
 static uint16_t bufferIndex = 0;
 
 // Accelerometer related
-static axis3bit16_t data_raw_acceleration[SELF_TEST_SAMPLES];
-static float acceleration_mg[SELF_TEST_SAMPLES][3];
+//static axis3bit16_t data_raw_acceleration[SELF_TEST_SAMPLES];
+//static float acceleration_mg[SELF_TEST_SAMPLES][3];
 static uint8_t whoamI, rst;
-static uint8_t tx_buffer[1000];
+//static uint8_t tx_buffer[1000];
 stmdev_ctx_t dev_ctx;
 lis2dw12_reg_t int_route;
 
@@ -119,6 +120,10 @@ void readSHT40(SHT40 *sht40);
 void scanI2CDevices(void);
 void printLineMarker(char marker); // for debugging
 void handleInterruptTriggers(UnscheduledTxTriggers trigger);
+void readLTC4015(LTCStatus *ltc4015);
+bool generatePowerTxPayload(Sensors sensors, TxPayload *payload);
+void appendModbusToPayload(TxPayload *payload, ModBus_t *modbus);
+void mockModbusResponse(ModBus_t *modbus, uint8_t *data, uint16_t length);
 
 
 //Lora FPF
@@ -128,6 +133,7 @@ bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload);
 bool joinNetwork(void);
 bool generatePayload(void **inputs, DataType *types, uint8_t itemCount, MessageType msgType, TxPayload *payload);
 bool generateHeartbeatTxPayload(Sensors sensors, TxPayload *payload);
+bool generatePowerTxPayload(Sensors sensors, TxPayload *payload);
 
 DryContactStatus MCP23008_ReadInputs(void);
 SmokeStatus ReadSmokeStatus(void);
@@ -136,7 +142,7 @@ SmokeStatus ReadSmokeStatus(void);
 // Accelerometer PFP
 static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len);
 static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
-static void tx_com( uint8_t *tx_buffer, uint16_t len );
+//static void tx_com( uint8_t *tx_buffer, uint16_t len );
 static void platform_delay(uint32_t ms);
 static void platform_init(void);
 bool initAccelerometer(void);
@@ -151,124 +157,124 @@ static inline float ABSF(float _x)
   return (_x < 0.0f) ? -(_x) : _x;
 }
 
-static int flush_samples(stmdev_ctx_t *dev_ctx)
-{
-  lis2dw12_reg_t reg;
-  axis3bit16_t dummy;
-  int samples = 0;
-  /*
-   * Discard old samples
-   */
-  lis2dw12_status_reg_get(dev_ctx, &reg.status);
-
-  if (reg.status.drdy) {
-    lis2dw12_acceleration_raw_get(dev_ctx, dummy.i16bit);
-    samples++;
-  }
-
-  return samples;
-}
-
-static void test_self_test_lis2dw12(stmdev_ctx_t *dev_ctx)
-{
-  lis2dw12_reg_t reg;
-  float media[3] = { 0.0f, 0.0f, 0.0f };
-  float mediast[3] = { 0.0f, 0.0f, 0.0f };
-  uint8_t match[3] = { 0, 0, 0 };
-  uint8_t j = 0;
-  uint16_t i = 0;
-  uint8_t k = 0;
-  uint8_t axis;
-  /* Restore default configuration */
-  lis2dw12_reset_set(dev_ctx, PROPERTY_ENABLE);
-
-  do {
-    lis2dw12_reset_get(dev_ctx, &rst);
-  } while (rst);
-
-  lis2dw12_block_data_update_set(dev_ctx, PROPERTY_ENABLE);
-  lis2dw12_full_scale_set(dev_ctx, LIS2DW12_4g);
-  lis2dw12_power_mode_set(dev_ctx, LIS2DW12_HIGH_PERFORMANCE);
-  lis2dw12_data_rate_set(dev_ctx, LIS2DW12_XL_ODR_50Hz);
-  HAL_Delay(100);
-  /* Flush old samples */
-  flush_samples(dev_ctx);
-
-  do {
-    lis2dw12_status_reg_get(dev_ctx, &reg.status);
-
-    if (reg.status.drdy) {
-      /* Read accelerometer data */
-      memset(data_raw_acceleration[i].i16bit, 0x00, 3 * sizeof(int16_t));
-      lis2dw12_acceleration_raw_get(dev_ctx,
-                                    data_raw_acceleration[i].i16bit);
-
-      for (axis = 0; axis < 3; axis++) {
-        acceleration_mg[i][axis] =
-          lis2dw12_from_fs4_to_mg(data_raw_acceleration[i].i16bit[axis]);
-      }
-
-      i++;
-    }
-  } while (i < SELF_TEST_SAMPLES);
-
-  for (k = 0; k < 3; k++) {
-    for (j = 0; j < SELF_TEST_SAMPLES; j++) {
-      media[k] += acceleration_mg[j][k];
-    }
-
-    media[k] = (media[k] / j);
-  }
-
-  /* Enable self test mode */
-  lis2dw12_self_test_set(dev_ctx, LIS2DW12_XL_ST_POSITIVE);
-  HAL_Delay(100);
-  i = 0;
-  /* Flush old samples */
-  flush_samples(dev_ctx);
-
-  do {
-    lis2dw12_status_reg_get(dev_ctx, &reg.status);
-
-    if (reg.status.drdy) {
-      /* Read accelerometer data */
-      memset(data_raw_acceleration[i].i16bit, 0x00, 3 * sizeof(int16_t));
-      lis2dw12_acceleration_raw_get(dev_ctx,
-                                    data_raw_acceleration[i].i16bit);
-
-      for (axis = 0; axis < 3; axis++)
-        acceleration_mg[i][axis] =
-          lis2dw12_from_fs4_to_mg(data_raw_acceleration[i].i16bit[axis]);
-
-      i++;
-    }
-  } while (i < SELF_TEST_SAMPLES);
-
-  for (k = 0; k < 3; k++) {
-    for (j = 0; j < SELF_TEST_SAMPLES; j++) {
-      mediast[k] += acceleration_mg[j][k];
-    }
-
-    mediast[k] = (mediast[k] / j);
-  }
-
-  /* Check for all axis self test value range */
-  for (k = 0; k < 3; k++) {
-    if ((ABSF(mediast[k] - media[k]) >= ST_MIN_POS) &&
-        (ABSF(mediast[k] - media[k]) <= ST_MAX_POS)) {
-      match[k] = 1;
-    }
-
-    sprintf((char *)tx_buffer, "%d: |%f| <= |%f| <= |%f| %s\r\n", k,
-            ST_MIN_POS, ABSF(mediast[k] - media[k]), ST_MAX_POS,
-            match[k] == 1 ? "PASSED" : "FAILED");
-    tx_com(tx_buffer, strlen((char const *)tx_buffer));
-  }
-
-  /* Disable self test mode */
-  lis2dw12_data_rate_set(dev_ctx, LIS2DW12_XL_ODR_OFF);
-  lis2dw12_self_test_set(dev_ctx, LIS2DW12_XL_ST_DISABLE);
-}
+//static int flush_samples(stmdev_ctx_t *dev_ctx)
+//{
+//  lis2dw12_reg_t reg;
+//  axis3bit16_t dummy;
+//  int samples = 0;
+//  /*
+//   * Discard old samples
+//   */
+//  lis2dw12_status_reg_get(dev_ctx, &reg.status);
+//
+//  if (reg.status.drdy) {
+//    lis2dw12_acceleration_raw_get(dev_ctx, dummy.i16bit);
+//    samples++;
+//  }
+//
+//  return samples;
+//}
+//
+//static void test_self_test_lis2dw12(stmdev_ctx_t *dev_ctx)
+//{
+//  lis2dw12_reg_t reg;
+//  float media[3] = { 0.0f, 0.0f, 0.0f };
+//  float mediast[3] = { 0.0f, 0.0f, 0.0f };
+//  uint8_t match[3] = { 0, 0, 0 };
+//  uint8_t j = 0;
+//  uint16_t i = 0;
+//  uint8_t k = 0;
+//  uint8_t axis;
+//  /* Restore default configuration */
+//  lis2dw12_reset_set(dev_ctx, PROPERTY_ENABLE);
+//
+//  do {
+//    lis2dw12_reset_get(dev_ctx, &rst);
+//  } while (rst);
+//
+//  lis2dw12_block_data_update_set(dev_ctx, PROPERTY_ENABLE);
+//  lis2dw12_full_scale_set(dev_ctx, LIS2DW12_4g);
+//  lis2dw12_power_mode_set(dev_ctx, LIS2DW12_HIGH_PERFORMANCE);
+//  lis2dw12_data_rate_set(dev_ctx, LIS2DW12_XL_ODR_50Hz);
+//  HAL_Delay(100);
+//  /* Flush old samples */
+//  flush_samples(dev_ctx);
+//
+//  do {
+//    lis2dw12_status_reg_get(dev_ctx, &reg.status);
+//
+//    if (reg.status.drdy) {
+//      /* Read accelerometer data */
+//      memset(data_raw_acceleration[i].i16bit, 0x00, 3 * sizeof(int16_t));
+//      lis2dw12_acceleration_raw_get(dev_ctx,
+//                                    data_raw_acceleration[i].i16bit);
+//
+//      for (axis = 0; axis < 3; axis++) {
+//        acceleration_mg[i][axis] =
+//          lis2dw12_from_fs4_to_mg(data_raw_acceleration[i].i16bit[axis]);
+//      }
+//
+//      i++;
+//    }
+//  } while (i < SELF_TEST_SAMPLES);
+//
+//  for (k = 0; k < 3; k++) {
+//    for (j = 0; j < SELF_TEST_SAMPLES; j++) {
+//      media[k] += acceleration_mg[j][k];
+//    }
+//
+//    media[k] = (media[k] / j);
+//  }
+//
+//  /* Enable self test mode */
+//  lis2dw12_self_test_set(dev_ctx, LIS2DW12_XL_ST_POSITIVE);
+//  HAL_Delay(100);
+//  i = 0;
+//  /* Flush old samples */
+//  flush_samples(dev_ctx);
+//
+//  do {
+//    lis2dw12_status_reg_get(dev_ctx, &reg.status);
+//
+//    if (reg.status.drdy) {
+//      /* Read accelerometer data */
+//      memset(data_raw_acceleration[i].i16bit, 0x00, 3 * sizeof(int16_t));
+//      lis2dw12_acceleration_raw_get(dev_ctx,
+//                                    data_raw_acceleration[i].i16bit);
+//
+//      for (axis = 0; axis < 3; axis++)
+//        acceleration_mg[i][axis] =
+//          lis2dw12_from_fs4_to_mg(data_raw_acceleration[i].i16bit[axis]);
+//
+//      i++;
+//    }
+//  } while (i < SELF_TEST_SAMPLES);
+//
+//  for (k = 0; k < 3; k++) {
+//    for (j = 0; j < SELF_TEST_SAMPLES; j++) {
+//      mediast[k] += acceleration_mg[j][k];
+//    }
+//
+//    mediast[k] = (mediast[k] / j);
+//  }
+//
+//  /* Check for all axis self test value range */
+//  for (k = 0; k < 3; k++) {
+//    if ((ABSF(mediast[k] - media[k]) >= ST_MIN_POS) &&
+//        (ABSF(mediast[k] - media[k]) <= ST_MAX_POS)) {
+//      match[k] = 1;
+//    }
+//
+//    sprintf((char *)tx_buffer, "%d: |%f| <= |%f| <= |%f| %s\r\n", k,
+//            ST_MIN_POS, ABSF(mediast[k] - media[k]), ST_MAX_POS,
+//            match[k] == 1 ? "PASSED" : "FAILED");
+//    tx_com(tx_buffer, strlen((char const *)tx_buffer));
+//  }
+//
+//  /* Disable self test mode */
+//  lis2dw12_data_rate_set(dev_ctx, LIS2DW12_XL_ODR_OFF);
+//  lis2dw12_self_test_set(dev_ctx, LIS2DW12_XL_ST_DISABLE);
+//}
 
 /* USER CODE END 0 */
 
@@ -318,11 +324,21 @@ int main(void)
   // Initialize SHT20 Sensor
   uint32_t sht40_serial;
   if( SHT40_ReadSerial(&hi2c1, &sht40_serial) != HAL_ERROR ) {
+	  	sensors.sht40.alarmState.temperature = NORMAL;
+	  	sensors.sht40.alarmState.humidity = NORMAL;
+	  	sensors.sht40.thresholds.temp_high = TEMP_HIGH;
+	  	sensors.sht40.thresholds.temp_low  = TEMP_LOW;
+	  	sensors.sht40.thresholds.temp_hys  = TEMP_HYS;
+	  	sensors.sht40.thresholds.rel_high  = RH_HIGH;
+		sensors.sht40.thresholds.rel_low   = RH_LOW;
+		sensors.sht40.thresholds.rel_hys   = RH_HYS;
 		printf("I2C connection established to SHT40 with serial %" PRIu32 "\r\n", sht40_serial);
   } else {
 		printf("Failed to read serial from SHT40; check connections and reset MCU\r\n");
   }
 
+
+  // Initialize accelerometer
   if(initAccelerometer()){
 	  printf("Accelerometer Initialized \r\n ");
   }
@@ -351,7 +367,7 @@ int main(void)
 
   WDTReset();
 
-
+  HAL_Delay(5000);
   printf("Setting LoRa Credentials \r\n");
   if(!setLoraCredentials()){
 	  printf("Error setting LoRa credentials \r\n");
@@ -361,10 +377,10 @@ int main(void)
 
   printf("Joining to Network \r\n");
 
-//  while(hasJoinedNetwork == false){
-////	  joinNetwork();
-////	  printf("Retrying Joining Lora\r\n");
-//  }
+  while(hasJoinedNetwork == false){
+	  joinNetwork();
+	  printf("Retrying Joining Lora\r\n");
+  }
   printf("Success Joining Lora \r\n");
 
   TxPayload initPayload;
@@ -431,13 +447,36 @@ int main(void)
 	    sensors.dryContact = MCP23008_ReadInputs();
 
 	    // PLaceholder for LTC4015
-	    sensors.ltc4015.VIN = 24.123;
-	    sensors.ltc4015.VBAT = 12.456;
-	    sensors.ltc4015.VSYS = 5.789;
+	    readLTC4015(&sensors.ltc4015);
+//	    sensors.ltc4015.VIN = 24.123;
+//	    sensors.ltc4015.VBAT = 12.456;
+//	    sensors.ltc4015.VSYS = 5.789;
 
-	    // Read ModBus Device
-	    //sendRaw(getMeterDataCmd, GetMeterData_LEN, &ModbusResp);
-	    //HAL_Delay(2000); // Give time to receive response
+	    TxPayload _powerPayload;
+	    generatePowerTxPayload(sensors, &_powerPayload);
+
+
+	    // First Modbus Command
+	    sendRaw(getMeterDataCmd1, GetMeterData_LEN, &ModbusResp);
+	    HAL_Delay(2000);
+
+	    // Mock first Modbus Response
+//	    uint8_t mockData1[] = {0x01, 0x03, 0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x64, 0x17};
+//	    mockModbusResponse(&ModbusResp, mockData1, sizeof(mockData1));
+	    appendModbusToPayload(&_powerPayload, &ModbusResp);
+
+
+	    // Second Modbus Command
+	    sendRaw(getMeterDataCmd2, GetMeterData_LEN, &ModbusResp);
+	    HAL_Delay(2000);
+
+
+	    // Mock second Modbus Response
+//	    uint8_t mockData2[] = {0x01, 0x03, 0x0E, 0x08, 0xD2, 0x00, 0x12, 0x00, 0x15, 0x00, 0x00, 0x00, 0x15, 0x03, 0xE8, 0x17, 0x61, 0x30, 0x4D};
+//	    mockModbusResponse(&ModbusResp, mockData2, sizeof(mockData2));
+	    appendModbusToPayload(&_powerPayload, &ModbusResp);
+
+		sendToLora(POWER_PORT, CONFIRMED_UPLINK, _powerPayload);
 
 #ifdef SCAN_I2C_DEVICES
   		scanI2CDevices();
@@ -930,14 +969,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					  break;
 				  case AT_RESPONSE_CAPTURE_JOIN:
 				  {
-					  if (strstr(responseBuffer, "JOINED") != NULL) {
+					  if (strstr(responseBuffer, "EVT:JOINED") != NULL) {
 						  responseReceived = true;
 						  hasJoinedNetwork = true;
 						  //printf("EVENT JOINED\r\n");
 						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
 						  bufferIndex = 0;
 					  }
-					  else if (strstr(responseBuffer, "JOIN FAILED") != NULL) {
+					  else if (strstr(responseBuffer, "EVT:JOIN FAILED") != NULL) {
 						  //responseReceived = true;
 						  hasJoinedNetwork = false;
 						  //printf("EVENT JOIN FAILED\r\n");
@@ -1068,6 +1107,8 @@ uint8_t dataToByteArray(void *input, uint8_t *output, DataType type) {
             memcpy(output, input, sizeof(float));
             size = sizeof(float);
             break;
+        default:
+        	break;
     }
     return size;
 }
@@ -1125,15 +1166,49 @@ bool generateHeartbeatTxPayload(Sensors sensors, TxPayload *payload){
 	MessageType msgType = HEARTBEAT;
 
 	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value,
-					  &sensors.smoke.level, &sensors.ltc4015.VIN, &sensors.ltc4015.VBAT, &sensors.ltc4015.VSYS};
+					  &sensors.smoke.level, &sensors.accel.status};
 
-	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT };
+	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_UINT8};
 
 	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
 
 #ifdef SERIAL_DEBUG_PAYLOADCHECK
 	if(ret){
 		printf("HEARTBEAT PAYLOAD: ");
+		for (uint8_t i = 0; i < payload->length; ++i) {
+			printf("%02X ", payload->buffer[i]);
+		}
+		printf("\r\n ");
+	}
+	else{
+		printf("Failed to generate payload\n");
+	}
+#endif
+
+	return ret;
+}
+
+bool generatePowerTxPayload(Sensors sensors, TxPayload *payload){
+	MessageType msgType = POWER_PARAMS;
+
+	void *inputs[] = {
+			&sensors.ltc4015.VIN,
+			&sensors.ltc4015.VBAT,
+			&sensors.ltc4015.VSYS,
+	};
+
+	DataType types[] = {
+			TYPE_FLOAT,
+			TYPE_FLOAT,
+			TYPE_FLOAT,
+	};
+
+	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
+
+
+#ifdef SERIAL_DEBUG_PAYLOADCHECK
+	if(ret){
+		printf("POWER PAYLOAD: ");
 		for (uint8_t i = 0; i < payload->length; ++i) {
 			printf("%02X ", payload->buffer[i]);
 		}
@@ -1345,7 +1420,65 @@ void readSHT40(SHT40 *_sht40){
 	}else{
 		_sht40->temperature = sht40.temperature;
 		_sht40->humidity    = sht40.rel_humidity;
+
+		// check for threshold breach
+
+
+		if(_sht40->temperature > _sht40->thresholds.temp_high + _sht40->thresholds.temp_hys){
+			//Anti Spam
+			if(_sht40->alarmState.temperature != ABOVE_THRESHOLD){
+				_sht40->alarmState.temperature = ABOVE_THRESHOLD;
+				printf("Threshold breach! -> Temperature High \r\n");
+			}
+		}
+
+		if(_sht40->temperature < _sht40->thresholds.temp_low - _sht40->thresholds.temp_hys){
+			//Anti Spam
+			if(_sht40->alarmState.temperature != BELOW_THRESHOLD){
+				_sht40->alarmState.temperature = BELOW_THRESHOLD;
+				printf("Threshold breach! -> Temperature Low \r\n");
+			}
+		}
+
+		if(_sht40->temperature > (_sht40->thresholds.temp_low + _sht40->thresholds.temp_hys)
+			&& _sht40->temperature < (_sht40->thresholds.temp_high - _sht40->thresholds.temp_hys)){
+			//Anti Spam
+			if(_sht40->alarmState.temperature != NORMAL){
+				_sht40->alarmState.temperature = NORMAL;
+				printf("Temperature Now Normal \r\n");
+			}
+		}
+
+		if(_sht40->humidity > _sht40->thresholds.rel_high + _sht40->thresholds.rel_hys){
+			//Anti Spam
+			if(_sht40->alarmState.humidity != ABOVE_THRESHOLD){
+				_sht40->alarmState.humidity = ABOVE_THRESHOLD;
+				printf("Threshold breach! -> Humidity High \r\n");
+			}
+		}
+
+		if(_sht40->humidity < _sht40->thresholds.rel_low - _sht40->thresholds.rel_hys){
+			//Anti Spam
+			if(_sht40->alarmState.humidity != BELOW_THRESHOLD){
+				_sht40->alarmState.humidity = BELOW_THRESHOLD;
+				printf("Threshold breach! -> Humidity Low \r\n");
+			}
+		}
+
+		if(_sht40->humidity > (_sht40->thresholds.rel_low + _sht40->thresholds.rel_hys)
+			&& _sht40->humidity < (_sht40->thresholds.rel_high - _sht40->thresholds.rel_hys)){
+			//Anti Spam
+			if(_sht40->alarmState.humidity != NORMAL){
+				_sht40->alarmState.humidity = NORMAL;
+				printf("Humidity Now Normal \r\n");
+			}
+		}
+
+
 	}
+
+
+
 
 }
 
@@ -1382,10 +1515,10 @@ static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp,
  * @param  len           number of byte to send
  *
  */
-static void tx_com(uint8_t *tx_buffer, uint16_t len)
-{
-	HAL_UART_Transmit(&hlpuart1, tx_buffer, len, 1000);
-}
+//static void tx_com(uint8_t *tx_buffer, uint16_t len)
+//{
+//	HAL_UART_Transmit(&hlpuart1, tx_buffer, len, 1000);
+//}
 
 /*
  * @brief  platform specific delay (platform dependent)
@@ -1504,6 +1637,7 @@ void readAccelerometer(Accel *_accel){
 		  //Inactivity
 		  // Reset after sending Interrupt
 //		  if(isTapDetected || isMovementDetected){
+		      _accel->status = STATIONARY;
 			  isTapDetected = false;
 			  isMovementDetected = false;
 //			  printf("Resetting flags \r\n ");
@@ -1545,6 +1679,39 @@ void readAccelerometer(Accel *_accel){
 		}
 	  }
 }
+
+void readLTC4015(LTCStatus *ltc4015){
+
+	 uint16_t i2c_data = 0;
+
+	 HAL_I2C_Mem_Read(&hi2c1, 0x68 << 1, 0x3A, I2C_MEMADD_SIZE_8BIT, (uint8_t*)&i2c_data, 2, HAL_MAX_DELAY);
+	 ltc4015->VBAT= i2c_data * 0.000192264 * 4;
+
+	 HAL_I2C_Mem_Read(&hi2c1, 0x68 << 1, 0x3B, I2C_MEMADD_SIZE_8BIT, (uint8_t*)&i2c_data, 2, HAL_MAX_DELAY);
+	 ltc4015->VIN = i2c_data * 0.001648;
+
+	 HAL_I2C_Mem_Read(&hi2c1, 0x68 << 1, 0x3C, I2C_MEMADD_SIZE_8BIT, (uint8_t*)&i2c_data, 2, HAL_MAX_DELAY);
+	 ltc4015->VSYS = i2c_data * 0.001648;
+#ifdef SERIAL_DEBUG_LTC
+	 printf("LTC4015 Readings \r\n");
+	 printf("VIN  = %.2f \r\n", ltc4015->VIN);
+	 printf("VBAT = %.2f \r\n", ltc4015->VBAT);
+	 printf("VSYS = %.2f \r\n", ltc4015->VSYS);
+#endif
+	}
+
+// Function to mock Modbus response
+void mockModbusResponse(ModBus_t *modbus, uint8_t *data, uint16_t length) {
+    memcpy(modbus->buffer, data, length);
+    modbus->rxIndex = length;
+}
+
+// Function to append Modbus response to payload
+void appendModbusToPayload(TxPayload *payload, ModBus_t *modbus) {
+    memcpy(&payload->buffer[payload->length], modbus->buffer, modbus->rxIndex);
+    payload->length += modbus->rxIndex;
+}
+
 
 /* USER CODE END 4 */
 

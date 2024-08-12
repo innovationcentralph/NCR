@@ -14,7 +14,7 @@
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
 #define VERSION_MID   1
-#define VERSION_MINOR 4
+#define VERSION_MINOR 6
 
 #define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
 #define MAX_UART_BUFFER_SIZE 500
@@ -41,6 +41,13 @@
 #define ST_MIN_POS      70.0f
 #define ST_MAX_POS      1500.0f
 
+// Thresholds for SHT40
+#define TEMP_HIGH 31.0
+#define TEMP_LOW  28.0
+#define TEMP_HYS  0.0
+#define RH_HYS    0.0
+#define RH_HIGH   70.0
+#define RH_LOW    30.0
 
 // Structure Definitions
 
@@ -52,7 +59,8 @@ typedef enum {
     TYPE_INT8,
     TYPE_INT16,
     TYPE_INT32,
-    TYPE_FLOAT
+    TYPE_FLOAT,
+	TYPE_UINT8_ARRAY
 } DataType;
 
 typedef enum {
@@ -108,8 +116,15 @@ typedef enum{
 	TEST_PORT = 1,
 	HEARTBEAT_PORT = 2,
 	INTERRUPT_PORT = 3,
-	TEST_UPLINK_PORT = 4
+	TEST_UPLINK_PORT = 4,
+	POWER_PORT = 5
 }UplinkPorts;
+
+enum{
+	NORMAL = 0,
+	ABOVE_THRESHOLD,
+	BELOW_THRESHOLD
+}AlarmStates;
 
 typedef enum{
 	CONFIRMED_UPLINK = 1,
@@ -119,6 +134,18 @@ typedef enum{
 typedef struct {
 	float temperature;
 	float humidity;
+	struct{
+		float temp_low;
+		float temp_high;
+		float temp_hys;
+		float rel_low;
+		float rel_high;
+		float rel_hys;
+	}thresholds;
+	struct{
+		uint8_t temperature;
+		uint8_t humidity;
+	}alarmState;
 }SHT40;
 
 typedef enum{
@@ -145,7 +172,8 @@ typedef enum {
     UNSCHEDULED_TRANSMISSION,
     DIAGNOSTICS,
     ACKNOWLEDGEMENT,
-    DOWNLINK_QUERY_RESPONSE
+    DOWNLINK_QUERY_RESPONSE,
+	POWER_PARAMS
 } MessageType;
 
 typedef struct{
@@ -160,14 +188,15 @@ typedef union {
 
 
 // System Behavior Macros
-//#define SERIAL_DEBUG_SHT
+#define SERIAL_DEBUG_SHT
 #define SERIAL_DEBUG_SENSORS
 //#define SERIAL_DEBUG_INTERRUPT
 #define SCAN_I2C_DEVICES
 //#define SERIAL_DEBUG_PAYLOADCHECK
+#define SERIAL_DEBUG_LTC
 
-#define SHT_READ_INTERVAL 1000
-#define DEVICE_HEARTBEAT  10000
+#define SHT_READ_INTERVAL  1000
+#define DEVICE_HEARTBEAT   10000
 #define WDT_RESET_INTERVAL 5000
 
 
@@ -175,7 +204,12 @@ typedef union {
 
 // Global Variables
 // ModBus Command to get data from Meter
-#define GET_METER_CMD {0x00, 0x01, 0x02, 0x03, 0x04}
-#define GetMeterData_LEN 5
+
+
+
+#define GET_METER_ERG_CMD {0x01, 0x03, 0x00, 0x3c, 0x00, 0x04, 0x84, 0x05}
+#define GET_METER_BASIC_CMD {0x01, 0x03, 0x00, 0x3c, 0x00, 0x04, 0x84, 0x05}
+
+#define GetMeterData_LEN 8
 
 #endif /* INC_PROJECTCONFIG_H_ */
