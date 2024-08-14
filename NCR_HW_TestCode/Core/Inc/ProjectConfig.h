@@ -49,6 +49,10 @@
 #define RH_HIGH   70.0
 #define RH_LOW    30.0
 
+#define WATER_LEAK_TH 1500
+
+#define QUEUE_MAX_SIZE 5
+
 // Structure Definitions
 
 // Define the enum for data types
@@ -128,7 +132,7 @@ enum{
 
 typedef enum{
 	CONFIRMED_UPLINK = 1,
-	UNCONFIRMED_UPLINK = 2,
+	UNCONFIRMED_UPLINK = 0,
 }UplinkTransmissionState;
 
 typedef struct {
@@ -158,6 +162,16 @@ typedef struct {
 	AccelState status;
 }Accel;
 
+typedef enum{
+	DRY = 0,
+	WET = 1
+}LeakState;
+
+typedef struct{
+	float raw;
+	LeakState state;
+}WaterLeak;
+
 typedef struct{
 
 	SHT40 sht40;
@@ -165,6 +179,7 @@ typedef struct{
 	DryContactStatus dryContact;
 	LTCStatus ltc4015;
 	Accel accel;
+	WaterLeak leak;
 }Sensors;
 
 typedef enum {
@@ -187,18 +202,27 @@ typedef union {
 } axis3bit16_t;
 
 
+typedef struct {
+    TxPayload queue[QUEUE_MAX_SIZE];
+    uint8_t front;
+    uint8_t rear;
+    uint8_t size;
+} TxPayloadQueue;
+
+
 // System Behavior Macros
 #define SERIAL_DEBUG_SHT
-#define SERIAL_DEBUG_SENSORS
+//#define SERIAL_DEBUG_SENSORS
 //#define SERIAL_DEBUG_INTERRUPT
 #define SCAN_I2C_DEVICES
 //#define SERIAL_DEBUG_PAYLOADCHECK
 #define SERIAL_DEBUG_LTC
 
-#define SHT_READ_INTERVAL  1000
-#define DEVICE_HEARTBEAT   10000
-#define WDT_RESET_INTERVAL 5000
-
+#define SHT_READ_INTERVAL   500
+#define DEVICE_HEARTBEAT    30000
+#define WDT_RESET_INTERVAL  5000
+#define MCU_REST_INTERVAL   180000
+#define QUEUE_SEND_INTERVAL 10000
 
 
 

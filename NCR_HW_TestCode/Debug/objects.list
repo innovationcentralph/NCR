@@ -1,5 +1,6 @@
 "./Core/LIS2DW12/lis2dw12_reg.o"
 "./Core/PWXModbus/PWX_ST50H_Modbus.o"
+"./Core/Src/ads1115.o"
 "./Core/Src/main.o"
 "./Core/Src/stm32wbxx_hal_msp.o"
 "./Core/Src/stm32wbxx_it.o"
