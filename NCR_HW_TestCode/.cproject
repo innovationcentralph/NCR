@@ -53,7 +53,6 @@
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32WBxx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/NCR_HW_TestCode/Core/LIS2DW12}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/NCR_HW_TestCode/Core/sht4x}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/NCR_HW_TestCode/Core/sht2x}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/NCR_HW_TestCode/Core/PWXModbus}&quot;"/>
 								</option>

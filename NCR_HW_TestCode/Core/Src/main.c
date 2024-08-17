@@ -29,7 +29,7 @@
 #include "PWX_ST50H_Modbus.h"
 #include "ATCommands.h"
 #include <inttypes.h>
-#include "sht40.h"
+#include <sht40.h>
 #include "ProjectConfig.h"
 #include "stdlib.h"
 #include "ads1115.h"
@@ -52,6 +52,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+
+IWDG_HandleTypeDef hiwdg;
 
 UART_HandleTypeDef hlpuart1;
 UART_HandleTypeDef huart1;
@@ -80,7 +82,11 @@ uint8_t getMeterDataCmd2[] = GET_METER_BASIC_CMD;
 // LPUART 1 Variables
 static bool responseReceived = false;
 static char responseBuffer[100];
+static char downlinkBuffer[100];
 static uint16_t bufferIndex = 0;
+bool isConfirmedUplinkReceived = false;
+bool isDownlinkReceived = false;
+uint8_t downlinkBufferLen = 0;
 
 // Accelerometer related
 //static axis3bit16_t data_raw_acceleration[SELF_TEST_SAMPLES];
@@ -113,6 +119,7 @@ static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_IWDG_Init(void);
 /* USER CODE BEGIN PFP */
 #ifdef __GNUC__
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
@@ -337,6 +344,7 @@ int main(void)
   MX_LPUART1_UART_Init();
   MX_I2C1_Init();
   MX_USART1_UART_Init();
+  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
   // Initialize MCP23008
@@ -356,25 +364,25 @@ int main(void)
 	  	sensors.sht40.thresholds.rel_high  = RH_HIGH;
 		sensors.sht40.thresholds.rel_low   = RH_LOW;
 		sensors.sht40.thresholds.rel_hys   = RH_HYS;
-		printf("I2C connection established to SHT40 with serial %" PRIu32 "\r\n", sht40_serial);
+		//printf("I2C connection established to SHT40 with serial %" PRIu32 "\r\n", sht40_serial);
   } else {
-		printf("Failed to read serial from SHT40; check connections and reset MCU\r\n");
+		//printf("Failed to read serial from SHT40; check connections and reset MCU\r\n");
   }
 
 
   // Initialize accelerometer
-//  if(initAccelerometer()){
-//	  printf("Accelerometer Initialized \r\n ");
-//  }
-//  else{
-//	  printf("Error Accelerometer Initialization \r\n ");
-//  }
+  if(initAccelerometer()){
+	  //printf("Accelerometer Initialized \r\n ");
+  }
+  else{
+	  //printf("Error Accelerometer Initialization \r\n ");
+  }
 
   if(ADS1115_Init(&hi2c1, ADS1115_DATA_RATE_64, ADS1115_PGA_ONE) == HAL_OK){
 	  HAL_Delay(1500);
-	  printf("ADC Present");
+	  //printf("ADC Present");
   } else{
-  	  printf("ADC Not Found");
+  	  //printf("ADC Not Found");
   }
 
 
@@ -399,22 +407,27 @@ int main(void)
 #endif
 
   WDTReset();
+  HAL_Delay(2000);
 
-  HAL_Delay(5000);
-  printf("Setting LoRa Credentials \r\n");
+  sendATCommand(AT_RFS, 2000, AT_RESPONSE_CAPTURE_OK);
+  sendATCommand(AT_RFS, 2000, AT_RESPONSE_CAPTURE_OK);
+  sendATCommand(AT_RFS, 2000, AT_RESPONSE_CAPTURE_OK);
+
+  HAL_Delay(2000);
+  //printf("Setting LoRa Credentials \r\n");
   if(!setLoraCredentials()){
-	  printf("Error setting LoRa credentials \r\n");
+
   }else{
-	  printf("Success setting LoRa credentials \r\n");
+	  //printf("Success setting LoRa credentials \r\n");
   }
 
-  printf("Joining to Network \r\n");
+  //printf("Joining to Network \r\n");
 
-//  while(hasJoinedNetwork == false){
-//	  joinNetwork();
-//	  printf("Retrying Joining Lora\r\n");
-//  }
-  printf("Success Joining Lora \r\n");
+  while(hasJoinedNetwork == false){
+	  joinNetwork();
+	  //printf("Retrying Joining Lora\r\n");
+  }
+  //printf("Success Joining Lora \r\n");
 
   TxPayload initPayload;
   initPayload.buffer[0] = 0x00;
@@ -438,7 +451,22 @@ int main(void)
 
   while (1)
   {
-	  // WDT Reset
+
+
+	  if(isDownlinkReceived == true){
+		  isDownlinkReceived = false;
+		  printf("DOWNLINK MESSAGE RECEIVED \r\n");
+		  printf("Received Buffer: %.*s\r\n", downlinkBufferLen, downlinkBuffer);
+	  }
+//	  if(isDownlinkReceived == true){
+//		  isDownlinkReceived = false;
+//		  printf("CONFIRMED UPLINK RECEIVED \r\n");
+//	  }
+
+	  // Internal IWDT Feed
+	  HAL_IWDG_Refresh(&hiwdg);
+
+	  // External WDT Feed
 	  if(HAL_GetTick() - wdtResetMillis > WDT_RESET_INTERVAL){
 		  WDTReset();
 		  wdtResetMillis = HAL_GetTick();
@@ -446,7 +474,7 @@ int main(void)
 
 	  // Hanging / Freezing BAND AID Solution
 	  if(HAL_GetTick() - mcuResetMillis > MCU_REST_INTERVAL){
-		  printf("RESTARTING MCU NOW... \r\n");
+		  //printf("RESTARTING MCU NOW... \r\n");
 		  HAL_Delay(1000);
 		  HAL_NVIC_SystemReset();
 		  mcuResetMillis = HAL_GetTick();
@@ -457,7 +485,7 @@ int main(void)
 	  if(HAL_GetTick() - payloadQueueMilis > QUEUE_SEND_INTERVAL){
 		  TxPayload payload;
 		  if (dequeue(&payLoadQueue, &payload) == 0) {
-		      printf("Sending To Lora \r\n ");
+		      //printf("Sending To Lora \r\n ");
 
 		      if(payload.msgType == UNSCHEDULED_TRANSMISSION){
 		    	  sendToLora(INTERRUPT_PORT, CONFIRMED_UPLINK, payload);
@@ -468,7 +496,7 @@ int main(void)
 		      }
 
 		  } else {
-		      printf("NOTHING TO SEND ... \r\n");
+		      //printf("NOTHING TO SEND ... \r\n");
 		  }
 		  payloadQueueMilis = HAL_GetTick();
 	  }
@@ -477,7 +505,7 @@ int main(void)
 
 
 
-	  //readAccelerometer(&sensors.accel);
+	  readAccelerometer(&sensors.accel);
 
 	//test_self_test_lis2dw12(&dev_ctx);
     /* USER CODE END WHILE */
@@ -499,7 +527,7 @@ int main(void)
   		readWaterLeak(&sensors.leak);
   		current_leak = sensors.leak.state;
   		if(current_leak != prev_leak){
-  			printf("ALERT ON LEAK \r\n");
+  			//printf("ALERT ON LEAK \r\n");
   			prev_leak = current_leak;
 
   			queueUnscheduledPayload();
@@ -514,7 +542,7 @@ int main(void)
   		sensors.smoke = ReadSmokeStatus();
   		current_smoke =  sensors.smoke.level;
   		if(current_smoke != prev_smoke){
-  			printf("ALERT ON SMOKE \r\n");
+  			//printf("ALERT ON SMOKE \r\n");
   			prev_smoke = current_smoke;
 
   			queueUnscheduledPayload();
@@ -525,7 +553,7 @@ int main(void)
   	    sensors.dryContact = MCP23008_ReadInputs();
   	    current_dryContact = sensors.dryContact.value;
   	    if(current_dryContact != prev_dryContact){
-  	    	printf("ALERT ON DRY CONTACT \r\n");
+  	    	//printf("ALERT ON DRY CONTACT \r\n");
   	    	prev_dryContact = current_dryContact;
 
   	    	queueUnscheduledPayload();
@@ -654,12 +682,14 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI1
+                              |RCC_OSCILLATORTYPE_MSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_10;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -752,6 +782,35 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief IWDG Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_IWDG_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG_Init 0 */
+
+  /* USER CODE END IWDG_Init 0 */
+
+  /* USER CODE BEGIN IWDG_Init 1 */
+
+  /* USER CODE END IWDG_Init 1 */
+  hiwdg.Instance = IWDG;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
+  hiwdg.Init.Window = 4095;
+  hiwdg.Init.Reload = 4095;
+  if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG_Init 2 */
+
+  /* USER CODE END IWDG_Init 2 */
 
 }
 
@@ -1071,7 +1130,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 				  switch(lpuartState){
 				  case AT_RESPONSE_CAPTURE_OK:
 					  if (strstr(responseBuffer, "OK") != NULL) {
-						  printf("OK RECEIVED\r\n");
+						  //printf("OK RECEIVED\r\n");
 						  responseReceived = true;
 					  }
 					  break;
@@ -1111,24 +1170,21 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 				  }
 				  case AT_RESPONSE_CAPTURE_SEND_OK:
 					  if (strstr(responseBuffer, "NO_NETWORK_JOINED") != NULL) {
-						  //responseReceived = true;
-
-						  //printf("ERROR JOIN\r\n");
-						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
-						  bufferIndex = 0;
-						  //lpuartState = UART_IDLE;
+						 bufferIndex = 0;
 					  }
 					  else if (strstr(responseBuffer, "OK") != NULL) {
-						  responseReceived = true;
-						  printf("SEND PARAM OK\r\n");
-						  //hasJoinedNetwork = false;
-						  //printf("EVENT JOIN FAILED\r\n");
 						  bufferIndex = 0;
-						  //lpuartState = UART_IDLE;
-						  //memset(responseBuffer, '\0', MAX_UART_BUFFER_SIZE);
 					  }
+					  else if (strstr(responseBuffer, "+EVT:5:") != NULL) {
+						  isDownlinkReceived = true;
+						  downlinkBufferLen = bufferIndex;
+						  memcpy(downlinkBuffer, responseBuffer, bufferIndex);
+					  }
+
 					  break;
+
 				  case UART_IDLE:
+
 					  // do nothing for now
 					  break;
 				  }
@@ -1137,6 +1193,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 				  bufferIndex = 0;
 			  }
 		  }
+
 
 //		  else if(lpuartState == AT_RESPONSE_CAPTURE_JOIN){
 //			  // Store received data in buffer
@@ -1264,8 +1321,8 @@ bool generateUnscheduledTxPayload(Sensors sensors, TxPayload *payload){
 
 	MessageType msgType = UNSCHEDULED_TRANSMISSION;
 
-	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value, &sensors.smoke.level, &sensors.leak.state};
-	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_UINT8};
+	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value, &sensors.smoke.level, &sensors.leak.state, &sensors.accel.status};
+	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_UINT8, TYPE_UINT8};
 
 	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
 
@@ -1290,9 +1347,9 @@ bool generateHeartbeatTxPayload(Sensors sensors, TxPayload *payload){
 	MessageType msgType = HEARTBEAT;
 
 	void *inputs[] = {&sensors.sht40.temperature, &sensors.sht40.humidity, &sensors.dryContact.value,
-					  &sensors.smoke.level, &sensors.ltc4015.VIN, &sensors.ltc4015.VBAT, &sensors.ltc4015.VSYS, &sensors.leak.state};
+					  &sensors.smoke.level, &sensors.ltc4015.VIN, &sensors.ltc4015.VBAT, &sensors.ltc4015.VSYS, &sensors.leak.state, &sensors.accel.status};
 
-	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8};
+	DataType types[] = { TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8, TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT, TYPE_UINT8, TYPE_UINT8};
 
 	bool ret = generatePayload(inputs, types, sizeof(inputs) / sizeof(void*), msgType, payload);
 
@@ -1400,6 +1457,7 @@ void handleInterruptTriggers(UnscheduledTxTriggers trigger){
 }
 
 bool setLoraCredentials(void){
+
 	if(!sendATCommand(AT_SET_DEVEUI, 2000, AT_RESPONSE_CAPTURE_OK)){
 		return false;
 	}
@@ -1505,7 +1563,7 @@ bool sendToLora(uint8_t portNumber, bool isConfirmedUplink, TxPayload payload){
 	strcat(result, "\r\n");
 
 	// Send the command
-	bool commandSent = sendATCommand(result, 2000, AT_RESPONSE_CAPTURE_SEND_OK);
+	bool commandSent = sendATCommand(result, 4000, AT_RESPONSE_CAPTURE_SEND_OK);
 
 	// Free the allocated memory
 	free(result);
@@ -1519,13 +1577,14 @@ bool sendATCommand(char *command, uint32_t responseWaitTime, LPUARTState _lpuart
     lpuartState = _lpuartState;
     //bufferIndex = 0;
     responseReceived = false;
-    //memset(responseBuffer, 0, MAX_UART_BUFFER_SIZE);
     printf(command);
 
     // Wait for response or timeout
     uint32_t startTick = HAL_GetTick();
     while ((HAL_GetTick() - startTick) < responseWaitTime) {
-        if (responseReceived) {
+    	// Internal IWDT Feed
+        HAL_IWDG_Refresh(&hiwdg);
+    	if (responseReceived) {
             return true; // "OK" response received
         }
     }
@@ -1552,7 +1611,7 @@ void readSHT40(SHT40 *_sht40){
 			//Anti Spam
 			if(_sht40->alarmState.temperature != ABOVE_THRESHOLD){
 				_sht40->alarmState.temperature = ABOVE_THRESHOLD;
-				printf("Threshold breach! -> Temperature High \r\n");
+				//printf("Threshold breach! -> Temperature High \r\n");
 				queueUnscheduledPayload();
 
 			}
@@ -1562,7 +1621,7 @@ void readSHT40(SHT40 *_sht40){
 			//Anti Spam
 			if(_sht40->alarmState.temperature != BELOW_THRESHOLD){
 				_sht40->alarmState.temperature = BELOW_THRESHOLD;
-				printf("Threshold breach! -> Temperature Low \r\n");
+				//printf("Threshold breach! -> Temperature Low \r\n");
 				queueUnscheduledPayload();
 			}
 		}
@@ -1572,7 +1631,7 @@ void readSHT40(SHT40 *_sht40){
 			//Anti Spam
 			if(_sht40->alarmState.temperature != NORMAL){
 				_sht40->alarmState.temperature = NORMAL;
-				printf("Temperature Now Normal \r\n");
+				//printf("Temperature Now Normal \r\n");
 				queueUnscheduledPayload();
 			}
 		}
@@ -1581,7 +1640,7 @@ void readSHT40(SHT40 *_sht40){
 			//Anti Spam
 			if(_sht40->alarmState.humidity != ABOVE_THRESHOLD){
 				_sht40->alarmState.humidity = ABOVE_THRESHOLD;
-				printf("Threshold breach! -> Humidity High \r\n");
+				//printf("Threshold breach! -> Humidity High \r\n");
 				queueUnscheduledPayload();
 			}
 		}
@@ -1590,7 +1649,7 @@ void readSHT40(SHT40 *_sht40){
 			//Anti Spam
 			if(_sht40->alarmState.humidity != BELOW_THRESHOLD){
 				_sht40->alarmState.humidity = BELOW_THRESHOLD;
-				printf("Threshold breach! -> Humidity Low \r\n");
+				//printf("Threshold breach! -> Humidity Low \r\n");
 				queueUnscheduledPayload();
 			}
 		}
@@ -1600,7 +1659,7 @@ void readSHT40(SHT40 *_sht40){
 			//Anti Spam
 			if(_sht40->alarmState.humidity != NORMAL){
 				_sht40->alarmState.humidity = NORMAL;
-				printf("Humidity Now Normal \r\n");
+				//printf("Humidity Now Normal \r\n");
 				queueUnscheduledPayload();
 			}
 		}
@@ -1781,7 +1840,7 @@ void readAccelerometer(Accel *_accel){
 		if(isTapDetected == false){
 			isTapDetected = true;
 			_accel->status = SMASHED;
-			printf("Smash Detected \nX: %d \nY: %d \nZ: %d\r\n ", all_source.wake_up_src.x_wu, all_source.wake_up_src.y_wu, all_source.wake_up_src.z_wu);
+			//printf("Smash Detected \nX: %d \nY: %d \nZ: %d\r\n ", all_source.wake_up_src.x_wu, all_source.wake_up_src.y_wu, all_source.wake_up_src.z_wu);
 
 			initTapMillis = HAL_GetTick();
 
@@ -1797,7 +1856,7 @@ void readAccelerometer(Accel *_accel){
 				if(isMovementDetected == false){
 					isMovementDetected = true;
 					_accel->status = MOVING;
-					printf("Movement Detected \r\n ");
+					//printf("Movement Detected \r\n ");
 
 					TxPayload _heartBeatPayload;
 					generateUnscheduledTxPayload(sensors, &_heartBeatPayload);
@@ -1888,9 +1947,9 @@ void queueUnscheduledPayload(void){
 	generateUnscheduledTxPayload(sensors, &unscheduledPayload);
 
 	if (enqueue(&payLoadQueue, unscheduledPayload) == 0) {
-		printf("Added to Queue \r\n");
+		//printf("Added to Queue \r\n");
 	} else {
-		printf("Queue is full \r\n");
+		//printf("Queue is full \r\n");
 	}
 }
 void queueHeartbeatPayload(void){
@@ -1898,9 +1957,9 @@ void queueHeartbeatPayload(void){
 	generateHeartbeatTxPayload(sensors, &heartbeatPayload);
 
 	if (enqueue(&payLoadQueue, heartbeatPayload) == 0) {
-		printf("Added Heartbeat to Queue \r\n");
+		//printf("Added Heartbeat to Queue \r\n");
 	} else {
-		printf("Queue is full \r\n");
+		//printf("Queue is full \r\n");
 	}
 
 }
@@ -1910,7 +1969,7 @@ void readWaterLeak(WaterLeak *leak){
 		leak->raw = adcRead;
 		leak->state = (adcRead > WATER_LEAK_TH) ? WET : DRY;
 	 }else{
-		 printf("Error Reading Water Leak");
+		 //printf("Error Reading Water Leak");
 	 }
 
 }

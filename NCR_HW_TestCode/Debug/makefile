@@ -10,7 +10,6 @@ RM := rm -rf
 # All of the sources participating in the build are defined here
 -include sources.mk
 -include Drivers/STM32WBxx_HAL_Driver/Src/subdir.mk
--include Core/sht4x/subdir.mk
 -include Core/sht2x/subdir.mk
 -include Core/Startup/subdir.mk
 -include Core/Src/subdir.mk
@@ -70,8 +69,8 @@ all: main-build
 main-build: NCR_HW_TestCode.elf secondary-outputs
 
 # Tool invocations
-NCR_HW_TestCode.elf NCR_HW_TestCode.map: $(OBJS) $(USER_OBJS) C:\Users\Owner\STM32CubeIDE\NCR\NCR_HW_TestCode\STM32WB55RGVX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "NCR_HW_TestCode.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Owner\STM32CubeIDE\NCR\NCR_HW_TestCode\STM32WB55RGVX_FLASH.ld" --specs=nosys.specs -Wl,-Map="NCR_HW_TestCode.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
+NCR_HW_TestCode.elf NCR_HW_TestCode.map: $(OBJS) $(USER_OBJS) C:\Users\Owner\OneDrive\Documents\GitHub\NCR_Pulled\NCR_HW_TestCode\STM32WB55RGVX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "NCR_HW_TestCode.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Owner\OneDrive\Documents\GitHub\NCR_Pulled\NCR_HW_TestCode\STM32WB55RGVX_FLASH.ld" --specs=nosys.specs -Wl,-Map="NCR_HW_TestCode.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

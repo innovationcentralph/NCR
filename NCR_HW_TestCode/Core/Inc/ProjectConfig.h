@@ -13,8 +13,8 @@
 // Firmware Version Control
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
-#define VERSION_MID   1
-#define VERSION_MINOR 6
+#define VERSION_MID   3
+#define VERSION_MINOR 0
 
 #define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
 #define MAX_UART_BUFFER_SIZE 500
@@ -214,9 +214,9 @@ typedef struct {
 #define SERIAL_DEBUG_SHT
 //#define SERIAL_DEBUG_SENSORS
 //#define SERIAL_DEBUG_INTERRUPT
-#define SCAN_I2C_DEVICES
+//#define SCAN_I2C_DEVICES
 //#define SERIAL_DEBUG_PAYLOADCHECK
-#define SERIAL_DEBUG_LTC
+//#define SERIAL_DEBUG_LTC
 
 #define SHT_READ_INTERVAL   500
 #define DEVICE_HEARTBEAT    30000

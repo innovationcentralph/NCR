@@ -1,0 +1,29 @@
+2024-08-17 14:20:58,379 [INFO] Activator:176 - 
+
+
+2024-08-17 14:20:58,383 [INFO] Activator:177 - !SESSION log4j initialized
+2024-08-17 14:21:04,918 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT] 
+2024-08-17 14:21:29,018 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+2024-08-17 14:21:29,020 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: Defaulting to no-operation (NOP) logger implementation
+2024-08-17 14:21:29,023 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+2024-08-17 14:24:43,995 [INFO] Activator:176 - 
+
+
+2024-08-17 14:24:43,999 [INFO] Activator:177 - !SESSION log4j initialized
+2024-08-17 14:24:51,942 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT] 
+2024-08-17 14:25:14,970 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+2024-08-17 14:25:14,971 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: Defaulting to no-operation (NOP) logger implementation
+2024-08-17 14:25:14,976 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+2024-08-17 14:27:22,063 [INFO] Activator:176 - 
+
+
+2024-08-17 14:27:22,068 [INFO] Activator:177 - !SESSION log4j initialized
+2024-08-17 14:27:26,538 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT] 
+2024-08-17 14:27:55,877 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+2024-08-17 14:27:55,878 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: Defaulting to no-operation (NOP) logger implementation
+2024-08-17 14:27:55,880 [ERROR] LogOutputStream:75 - [STDERR_REDIRECT] SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+2024-08-17 14:30:23,205 [INFO] Activator:176 - 
+
+
+2024-08-17 14:30:23,209 [INFO] Activator:177 - !SESSION log4j initialized
+2024-08-17 14:30:32,750 [INFO] LogOutputStream:77 - [STDOUT_REDIRECT] 

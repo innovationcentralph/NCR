@@ -1,9 +1,0 @@
-../Core/sht4x/sht40.c:58:19:SHT40_Measure	32	static
-../Core/sht4x/sht40.c:69:19:SHT40_Heat	32	static
-../Core/sht4x/sht40.c:80:19:SHT40_SoftReset	24	static
-../Core/sht4x/sht40.c:93:19:SHT40_ReadSerial	32	static
-../Core/sht4x/sht40.c:113:13:verify_checksum	24	static
-../Core/sht4x/sht40.c:125:26:i2c_communicate	40	static
-../Core/sht4x/sht40.c:160:26:read_temp_humidity	24	static
-../Core/sht4x/sht40.c:175:14:hardware_to_celsius	16	static
-../Core/sht4x/sht40.c:182:14:hardware_to_humidity_percentage	16	static
