@@ -79,6 +79,10 @@ DryContactStatus dryContact;
 uint8_t getMeterDataCmd1[] = GET_METER_ERG_CMD;
 uint8_t getMeterDataCmd2[] = GET_METER_BASIC_CMD;
 
+uint8_t setMeterOff[]     = METER_CMD_ON;
+uint8_t setMeterOn[]      = METER_CMD_OFF;
+uint8_t setMeterPrepaid[] = METER_CMD_PREPAID;
+
 // LPUART 1 Variables
 static bool responseReceived = false;
 static char responseBuffer[100];
@@ -87,6 +91,8 @@ static uint16_t bufferIndex = 0;
 bool isConfirmedUplinkReceived = false;
 bool isDownlinkReceived = false;
 uint8_t downlinkBufferLen = 0;
+bool isWarmedUp = false;
+uint32_t warmUpMillis = 0;
 
 // Accelerometer related
 //static axis3bit16_t data_raw_acceleration[SELF_TEST_SAMPLES];
@@ -388,8 +394,10 @@ int main(void)
 
 
   // Initialize Modbus
-  //initModbus(&huart1, MODBUS_EN_GPIO_Port, MODBUS_EN_Pin);
-  //HAL_UART_Receive_IT(&huart1, (uint8_t *)(ModbusResp.buffer + ModbusResp.rxIndex), 1);
+  initModbus(&huart1, MODBUS_EN_GPIO_Port, MODBUS_EN_Pin);
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)(ModbusResp.buffer + ModbusResp.rxIndex), 1);
+
+  // Init ST50H AT Slave Communication
   uint8_t rxBuffer;
   HAL_UART_Receive_IT(&hlpuart1, &rxBuffer, 1);
   // Initialize timers;
@@ -421,13 +429,13 @@ int main(void)
 	  //printf("Success setting LoRa credentials \r\n");
   }
 
-  //printf("Joining to Network \r\n");
+  printf("Joining to Network \r\n");
 
   while(hasJoinedNetwork == false){
 	  joinNetwork();
-	  //printf("Retrying Joining Lora\r\n");
+	  printf("Retrying Joining Lora\r\n");
   }
-  //printf("Success Joining Lora \r\n");
+  printf("Success Joining Lora \r\n");
 
   TxPayload initPayload;
   initPayload.buffer[0] = 0x00;
@@ -443,7 +451,7 @@ int main(void)
 //
 //  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
   mcuResetMillis = HAL_GetTick();
-
+  warmUpMillis = HAL_GetTick();
 
 
   initQueue(&payLoadQueue);
@@ -451,17 +459,6 @@ int main(void)
 
   while (1)
   {
-
-
-	  if(isDownlinkReceived == true){
-		  isDownlinkReceived = false;
-		  printf("DOWNLINK MESSAGE RECEIVED \r\n");
-		  printf("Received Buffer: %.*s\r\n", downlinkBufferLen, downlinkBuffer);
-	  }
-//	  if(isDownlinkReceived == true){
-//		  isDownlinkReceived = false;
-//		  printf("CONFIRMED UPLINK RECEIVED \r\n");
-//	  }
 
 	  // Internal IWDT Feed
 	  HAL_IWDG_Refresh(&hiwdg);
@@ -471,6 +468,67 @@ int main(void)
 		  WDTReset();
 		  wdtResetMillis = HAL_GetTick();
 	  }
+
+	  //Do Warm up to exclude false readings
+	  if(isWarmedUp == false){
+		  if(HAL_GetTick() - warmUpMillis > WARM_UP_TIME){
+			  isWarmedUp = true;
+		  }
+	  }
+
+//	  sendRaw(setMeterOn, METER_CMD_ON_LEN, &ModbusResp);
+//	  HAL_Delay(1000);
+//
+//	  printf("MODBUS RESPONSE (Hex): ");
+//	  for (int x = 0; x < ModbusResp.rxIndex; x++) {
+//			printf("%02X ", ModbusResp.buffer[x]);
+//	  }
+//	  printf("\r\n");
+//
+//	  HAL_Delay(2000);
+//
+//	  sendRaw(setMeterOff, METER_CMD_OFF_LEN, &ModbusResp);
+//	  HAL_Delay(1000);
+//
+//	  printf("MODBUS RESPONSE (Hex): ");
+//	  for (int x = 0; x < ModbusResp.rxIndex; x++) {
+//			printf("%02X ", ModbusResp.buffer[x]);
+//	  }
+//	  printf("\r\n");
+//
+//	  HAL_Delay(2000);
+
+
+
+
+	  if(isDownlinkReceived == true){
+		  isDownlinkReceived = false;
+		  printf("DOWNLINK MESSAGE RECEIVED \r\n");
+		  printf("Received Buffer: %.*s\r\n", downlinkBufferLen, downlinkBuffer);
+
+		  // Check for Modbus Control
+		  if(strstr(downlinkBuffer, "0101") != NULL){
+			  printf("Modbus Command: Turn ON \r\n ");
+			  sendRaw(setMeterOn, METER_CMD_ON_LEN, &ModbusResp);
+			  HAL_Delay(1000);
+		  }
+		  if(strstr(downlinkBuffer, "0102") != NULL){
+			  printf("Modbus Command: Turn OFF \r\n ");
+			  sendRaw(setMeterOff, METER_CMD_OFF_LEN, &ModbusResp);
+			  HAL_Delay(1000);
+		  }
+		  if(strstr(downlinkBuffer, "0103") != NULL){
+			  printf("Modbus Command: Prepaid \r\n ");
+			  sendRaw(setMeterPrepaid, METER_CMD_PREPAID_LEN, &ModbusResp);
+			  HAL_Delay(1000);
+		  }
+	  }
+	  if(isDownlinkReceived == true){
+		  isDownlinkReceived = false;
+		  printf("CONFIRMED UPLINK RECEIVED \r\n");
+	  }
+
+
 
 	  // Hanging / Freezing BAND AID Solution
 	  if(HAL_GetTick() - mcuResetMillis > MCU_REST_INTERVAL){
@@ -878,7 +936,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
+  huart1.Init.BaudRate = 9600;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -1943,23 +2001,27 @@ int isQueueFull(TxPayloadQueue *q) {
 
 
 void queueUnscheduledPayload(void){
+
 	TxPayload unscheduledPayload;
 	generateUnscheduledTxPayload(sensors, &unscheduledPayload);
-
-	if (enqueue(&payLoadQueue, unscheduledPayload) == 0) {
-		//printf("Added to Queue \r\n");
-	} else {
-		//printf("Queue is full \r\n");
+	if(isWarmedUp == true){
+		if (enqueue(&payLoadQueue, unscheduledPayload) == 0) {
+			//printf("Added to Queue \r\n");
+		} else {
+			//printf("Queue is full \r\n");
+		}
 	}
 }
 void queueHeartbeatPayload(void){
 	TxPayload heartbeatPayload;
 	generateHeartbeatTxPayload(sensors, &heartbeatPayload);
 
-	if (enqueue(&payLoadQueue, heartbeatPayload) == 0) {
-		//printf("Added Heartbeat to Queue \r\n");
-	} else {
-		//printf("Queue is full \r\n");
+	if(isWarmedUp == true){
+		if (enqueue(&payLoadQueue, heartbeatPayload) == 0) {
+			//printf("Added Heartbeat to Queue \r\n");
+		} else {
+			//printf("Queue is full \r\n");
+		}
 	}
 
 }
