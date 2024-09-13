@@ -14,7 +14,7 @@
 #define FirmwareName "NCR ATM Monitoring System"
 #define VERSION_MAJOR 1
 #define VERSION_MID   3
-#define VERSION_MINOR 4
+#define VERSION_MINOR 8
 
 #define MAX_LORA_PAYLOAD_BUFFER_SIZE 50
 #define MAX_UART_BUFFER_SIZE 500
@@ -224,6 +224,7 @@ typedef struct {
 #define MCU_REST_INTERVAL   180000
 #define QUEUE_SEND_INTERVAL 15000
 #define WARM_UP_TIME        10000
+#define ACREL_READ_INTERVAL 30000
 
 
 // Global Variables
@@ -231,8 +232,8 @@ typedef struct {
 
 
 
-#define GET_METER_ERG_CMD {0x01, 0x03, 0x00, 0x3c, 0x00, 0x04, 0x84, 0x05}
-#define GET_METER_BASIC_CMD {0x01, 0x03, 0x00, 0x3c, 0x00, 0x04, 0x84, 0x05}
+#define GET_METER_ERG_CMD   {0x01, 0x03, 0x00, 0x3c, 0x00, 0x04, 0x84, 0x05}
+#define GET_METER_BASIC_CMD {0x01, 0x03, 0x00, 0x0B, 0x00, 0x07, 0x75, 0xCA}
 
 #define GetMeterData_LEN 8
 

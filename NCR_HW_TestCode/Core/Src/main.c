@@ -93,6 +93,7 @@ bool isDownlinkReceived = false;
 uint8_t downlinkBufferLen = 0;
 bool isWarmedUp = false;
 uint32_t warmUpMillis = 0;
+uint32_t acrelReadMillis = 0;
 
 // Accelerometer related
 //static axis3bit16_t data_raw_acceleration[SELF_TEST_SAMPLES];
@@ -152,6 +153,7 @@ void appendModbusToPayload(TxPayload *payload, ModBus_t *modbus);
 void mockModbusResponse(ModBus_t *modbus, uint8_t *data, uint16_t length);
 void queueUnscheduledPayload(void);
 void queueHeartbeatPayload(void);
+void queuePayload(TxPayload Payload);
 
 void readWaterLeak(WaterLeak *leak);
 
@@ -452,6 +454,7 @@ int main(void)
 //  sendToLora(TEST_UPLINK_PORT, CONFIRMED_UPLINK, initPayload);
   mcuResetMillis = HAL_GetTick();
   warmUpMillis = HAL_GetTick();
+  acrelReadMillis = HAL_GetTick();
 
 
   initQueue(&payLoadQueue);
@@ -552,6 +555,9 @@ int main(void)
 		      else if(payload.msgType == HEARTBEAT){
 		    	  sendToLora(HEARTBEAT_PORT, UNCONFIRMED_UPLINK, payload);
 		      }
+		      else if(payload.msgType == POWER_PARAMS){
+				  sendToLora(POWER_PORT, UNCONFIRMED_UPLINK, payload);
+			  }
 
 		  } else {
 		      //printf("NOTHING TO SEND ... \r\n");
@@ -635,7 +641,42 @@ int main(void)
   		shtReadMillis = HAL_GetTick();
   	  }
 
+  	  // Read Acrel Meter every Y Interval
+  	  if(HAL_GetTick() - acrelReadMillis > ACREL_READ_INTERVAL){
 
+  		  	TxPayload _powerPayload;
+  		    _powerPayload.msgType = POWER_PARAMS;
+  		    _powerPayload.buffer[0] = POWER_PARAMS;
+  		    _powerPayload.length = 1;
+
+			// First Modbus Command
+			sendRaw(getMeterDataCmd1, GetMeterData_LEN, &ModbusResp);
+			HAL_Delay(2000);
+
+//			  printf("MODBUS RESPONSE (Hex): ");
+//			  for (int x = 0; x < ModbusResp.rxIndex; x++) {
+//					printf("%02X ", ModbusResp.buffer[x]);
+//			  }
+//			  printf("\r\n");
+
+			appendModbusToPayload(&_powerPayload, &ModbusResp);
+
+			// Second Modbus Command
+			sendRaw(getMeterDataCmd2, GetMeterData_LEN, &ModbusResp);
+			HAL_Delay(2000);
+
+//			  printf("MODBUS RESPONSE (Hex): ");
+//			  for (int x = 0; x < ModbusResp.rxIndex; x++) {
+//					printf("%02X ", ModbusResp.buffer[x]);
+//			  }
+//			  printf("\r\n");
+
+			appendModbusToPayload(&_powerPayload, &ModbusResp);
+
+			queuePayload(_powerPayload);
+
+			acrelReadMillis = HAL_GetTick();
+  	  }
 
 
 
@@ -2018,6 +2059,18 @@ void queueHeartbeatPayload(void){
 
 	if(isWarmedUp == true){
 		if (enqueue(&payLoadQueue, heartbeatPayload) == 0) {
+			//printf("Added Heartbeat to Queue \r\n");
+		} else {
+			//printf("Queue is full \r\n");
+		}
+	}
+
+}
+
+void queuePayload(TxPayload Payload){
+
+	if(isWarmedUp == true){
+		if (enqueue(&payLoadQueue, Payload) == 0) {
 			//printf("Added Heartbeat to Queue \r\n");
 		} else {
 			//printf("Queue is full \r\n");
